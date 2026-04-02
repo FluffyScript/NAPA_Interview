@@ -5,6 +5,12 @@ using Npgsql;
 
 namespace Monitoring.Api.Repositories;
 
+/// <summary>
+/// Translates DbContext queries into API-facing DTOs.
+///
+/// Rule: no SQL strings here — all queries are expressed as LINQ over DbSets.
+/// The SQL that backs each keyless entity lives in <see cref="MonitoringDbContext.OnModelCreating"/>.
+/// </summary>
 public sealed class PostgresRepository
 {
     private readonly MonitoringDbContext _context;
@@ -16,60 +22,27 @@ public sealed class PostgresRepository
         _logger  = logger;
     }
 
+    // ── API-facing methods ────────────────────────────────────────────────────
+
     public async Task<OverviewDto> GetOverviewAsync()
     {
-        var row = await _context.Overview
-            .FromSql($"""
-                SELECT
-                    CAST((
-                        SELECT COUNT(*) FROM pg_stat_activity
-                        WHERE state = 'active'
-                          AND now() - query_start > interval '30 seconds'
-                          AND query NOT ILIKE '%pg_stat_activity%'
-                    ) AS int) AS long_running_count,
-                    CAST((
-                        SELECT COUNT(*) FROM pg_stat_activity
-                        WHERE wait_event_type = 'Lock'
-                    ) AS int) AS blocked_count,
-                    CAST((
-                        SELECT COUNT(*) FROM pg_stat_activity
-                        WHERE state = 'active'
-                    ) AS int) AS active_count,
-                    CAST(COALESCE((
-                        SELECT EXTRACT(EPOCH FROM MAX(now() - query_start))
-                        FROM pg_stat_activity
-                        WHERE state = 'active'
-                          AND query NOT ILIKE '%pg_stat_activity%'
-                    ), 0) AS double precision) AS max_duration_seconds
-                """)
-            .SingleAsync();
+        var row = await _context.Overview.SingleAsync();
 
         return new OverviewDto(
-            LongRunningQueryCount:  row.LongRunningCount,
-            BlockedSessionCount:    row.BlockedCount,
-            TotalActiveSessions:    row.ActiveCount,
+            LongRunningQueryCount:   row.LongRunningCount,
+            BlockedSessionCount:     row.BlockedCount,
+            TotalActiveSessions:     row.ActiveCount,
             MaxQueryDurationSeconds: row.MaxDurationSeconds,
-            Timestamp:              DateTimeOffset.UtcNow
+            Timestamp:               DateTimeOffset.UtcNow
         );
     }
 
     public async Task<IEnumerable<LongRunningQueryDto>> GetLongRunningQueriesAsync(int thresholdSeconds = 30)
     {
         var rows = await _context.LongRunningQueries
-            .FromSql($"""
-                SELECT
-                    pid,
-                    state,
-                    query,
-                    CAST(EXTRACT(EPOCH FROM (now() - query_start)) AS double precision) AS duration_seconds,
-                    COALESCE(application_name, '') AS application_name
-                FROM pg_stat_activity
-                WHERE state = 'active'
-                  AND now() - query_start > make_interval(secs => {thresholdSeconds})
-                  AND query NOT ILIKE '%pg_stat_activity%'
-                ORDER BY duration_seconds DESC
-                LIMIT 50
-                """)
+            .Where(q => q.DurationSeconds > thresholdSeconds)
+            .OrderByDescending(q => q.DurationSeconds)
+            .Take(50)
             .ToListAsync();
 
         return rows.Select(r => new LongRunningQueryDto(
@@ -83,19 +56,7 @@ public sealed class PostgresRepository
 
     public async Task<IEnumerable<BlockedSessionDto>> GetBlockedSessionsAsync()
     {
-        var rows = await _context.BlockedSessions
-            .FromSql($"""
-                SELECT
-                    blocked.pid   AS blocked_pid,
-                    blocked.query AS blocked_query,
-                    blocking.pid  AS blocking_pid,
-                    blocking.query AS blocking_query
-                FROM pg_stat_activity AS blocked
-                JOIN pg_stat_activity AS blocking
-                    ON blocking.pid = ANY(pg_blocking_pids(blocked.pid))
-                WHERE cardinality(pg_blocking_pids(blocked.pid)) > 0
-                """)
-            .ToListAsync();
+        var rows = await _context.BlockedSessions.ToListAsync();
 
         return rows.Select(r => new BlockedSessionDto(
             BlockedPid:    r.BlockedPid,
@@ -108,17 +69,9 @@ public sealed class PostgresRepository
     public async Task<IEnumerable<DeadTuplesDto>> GetDeadTuplesAsync(int minDeadTuples = 100)
     {
         var rows = await _context.DeadTuples
-            .FromSql($"""
-                SELECT
-                    schemaname AS schema_name,
-                    relname    AS table_name,
-                    n_dead_tup AS dead_tuple_count,
-                    n_live_tup AS live_tuple_count
-                FROM pg_stat_user_tables
-                WHERE n_dead_tup >= {minDeadTuples}
-                ORDER BY n_dead_tup DESC
-                LIMIT 50
-                """)
+            .Where(r => r.DeadTupleCount >= minDeadTuples)
+            .OrderByDescending(r => r.DeadTupleCount)
+            .Take(50)
             .ToListAsync();
 
         return rows.Select(r => new DeadTuplesDto(
@@ -129,49 +82,27 @@ public sealed class PostgresRepository
         ));
     }
 
-    // ── Methods used by the background collector ──────────────────────────────
+    // ── Background collector methods ──────────────────────────────────────────
 
-    public async Task<int> GetLongRunningQueryCountAsync() =>
-        (int)await _context.Counts
-            .FromSql($"""
-                SELECT CAST(COUNT(*) AS bigint) AS count
-                FROM pg_stat_activity
-                WHERE state = 'active'
-                  AND now() - query_start > interval '30 seconds'
-                  AND query NOT ILIKE '%pg_stat_activity%'
-                """)
-            .Select(r => r.Count)
-            .SingleAsync();
+    public Task<int> GetLongRunningQueryCountAsync() =>
+        _context.LongRunningQueries
+            .CountAsync(q => q.DurationSeconds > 30);
 
-    public async Task<int> GetBlockedSessionCountAsync() =>
-        (int)await _context.Counts
-            .FromSql($"SELECT CAST(COUNT(*) AS bigint) AS count FROM pg_stat_activity WHERE wait_event_type = 'Lock'")
-            .Select(r => r.Count)
-            .SingleAsync();
+    public Task<int> GetBlockedSessionCountAsync() =>
+        _context.BlockedSessions.CountAsync();
 
-    public async Task<int> GetTotalActiveSessionsAsync() =>
-        (int)await _context.Counts
-            .FromSql($"SELECT CAST(COUNT(*) AS bigint) AS count FROM pg_stat_activity WHERE state = 'active'")
-            .Select(r => r.Count)
-            .SingleAsync();
+    public Task<int> GetTotalActiveSessionsAsync() =>
+        _context.LongRunningQueries.CountAsync();
 
     public async Task<long> GetTopDeadTupleCountAsync() =>
-        await _context.DeadTuples
-            .FromSql($"""
-                SELECT schemaname AS schema_name, relname AS table_name,
-                       n_dead_tup AS dead_tuple_count, n_live_tup AS live_tuple_count
-                FROM pg_stat_user_tables
-                """)
-            .MaxAsync(r => r.DeadTupleCount);
+        await _context.DeadTuples.MaxAsync(r => (long?)r.DeadTupleCount) ?? 0L;
 
     public async Task<int> GetSlowQueryCountAsync()
     {
         try
         {
-            return (int)await _context.Counts
-                .FromSql($"SELECT CAST(COUNT(*) AS bigint) AS count FROM pg_stat_statements WHERE mean_exec_time > 1000")
-                .Select(r => r.Count)
-                .SingleAsync();
+            return await _context.SlowQueries
+                .CountAsync(q => q.MeanExecTime > 1000);
         }
         catch (PostgresException ex) when (ex.SqlState == "42P01") // undefined_table
         {
