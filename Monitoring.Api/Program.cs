@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using Monitoring.Api.Data;
 using Monitoring.Api.Repositories;
 using Monitoring.Api.Routes;
 using Monitoring.Api.Services;
@@ -36,8 +38,13 @@ builder.Services.AddProblemDetails(options =>
     };
 });
 
+// --- Entity Framework Core ---
+builder.Services.AddDbContext<MonitoringDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres"))
+           .UseSnakeCaseNamingConvention());
+
 // --- Repositories & background services ---
-builder.Services.AddSingleton<PostgresRepository>();
+builder.Services.AddScoped<PostgresRepository>();
 builder.Services.AddHostedService<PostgresMonitoringCollector>();
 
 var app = builder.Build();
