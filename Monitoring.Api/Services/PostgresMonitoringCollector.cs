@@ -12,34 +12,36 @@ public sealed class PostgresMonitoringCollector : BackgroundService
     // --- Prometheus instruments (static so they survive DI scope changes) ---
 
     private static readonly Gauge LongRunningQueries = Metrics.CreateGauge(
-        "postgres_long_running_queries",
-        "Number of queries running longer than 30 s.");
+        Constants.Metrics.Names.LongRunningQueries,
+        Constants.Metrics.Descriptions.LongRunningQueries);
 
     private static readonly Gauge BlockedSessions = Metrics.CreateGauge(
-        "postgres_blocked_sessions",
-        "Number of sessions currently blocked by a lock.");
+        Constants.Metrics.Names.BlockedSessions,
+        Constants.Metrics.Descriptions.BlockedSessions);
 
     private static readonly Gauge ActiveSessions = Metrics.CreateGauge(
-        "postgres_active_sessions",
-        "Total number of active PostgreSQL sessions.");
+        Constants.Metrics.Names.ActiveSessions,
+        Constants.Metrics.Descriptions.ActiveSessions);
 
     private static readonly Gauge SlowQueryCount = Metrics.CreateGauge(
-        "postgres_slow_query_count",
-        "Queries with mean execution time > 1 s (requires pg_stat_statements extension).");
+        Constants.Metrics.Names.SlowQueryCount,
+        Constants.Metrics.Descriptions.SlowQueryCount);
 
-    // Labeled gauge: one time-series per {schema, table}
     private static readonly Gauge DeadTuplesPerTable = Metrics.CreateGauge(
-        "postgres_dead_tuples",
-        "Dead tuple count per user table.",
-        new GaugeConfiguration { LabelNames = ["schema", "table"] });
+        Constants.Metrics.Names.DeadTuples,
+        Constants.Metrics.Descriptions.DeadTuples,
+        new GaugeConfiguration
+        {
+            LabelNames = [Constants.Metrics.Labels.Schema, Constants.Metrics.Labels.Table]
+        });
 
     private static readonly Counter CollectionsTotal = Metrics.CreateCounter(
-        "monitoring_collections_total",
-        "Total number of completed Postgres metric collection cycles.");
+        Constants.Metrics.Names.CollectionsTotal,
+        Constants.Metrics.Descriptions.CollectionsTotal);
 
     private static readonly Histogram CollectionDuration = Metrics.CreateHistogram(
-        "monitoring_collection_duration_seconds",
-        "Time taken to complete one Postgres metric collection cycle.",
+        Constants.Metrics.Names.CollectionDuration,
+        Constants.Metrics.Descriptions.CollectionDuration,
         new HistogramConfiguration
         {
             Buckets = Histogram.LinearBuckets(start: 0.01, width: 0.05, count: 10)
@@ -59,7 +61,7 @@ public sealed class PostgresMonitoringCollector : BackgroundService
         _logger = logger;
         _serviceProvider = serviceProvider;
         _interval = TimeSpan.FromSeconds(
-            configuration.GetValue("Monitoring:CollectionIntervalSeconds", 15));
+            configuration.GetValue(Constants.Config.CollectionIntervalSeconds, 15));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -98,12 +100,11 @@ public sealed class PostgresMonitoringCollector : BackgroundService
         await using var scope = _serviceProvider.CreateAsyncScope();
         var repo = scope.ServiceProvider.GetRequiredService<PostgresRepository>();
 
-        // Fire all independent queries concurrently
         var longRunningTask = repo.GetLongRunningQueryCountAsync();
         var blockedTask     = repo.GetBlockedSessionCountAsync();
         var activeTask      = repo.GetTotalActiveSessionsAsync();
         var slowQueryTask   = repo.GetSlowQueryCountAsync();
-        var deadTuplesTask  = repo.GetDeadTuplesAsync(minDeadTuples: 0); // all tables for labels
+        var deadTuplesTask  = repo.GetDeadTuplesAsync(minDeadTuples: 0);
 
         await Task.WhenAll(longRunningTask, blockedTask, activeTask, slowQueryTask, deadTuplesTask);
 
@@ -112,10 +113,11 @@ public sealed class PostgresMonitoringCollector : BackgroundService
         ActiveSessions.Set(await activeTask);
         SlowQueryCount.Set(await slowQueryTask);
 
-        // Update labeled dead-tuple gauge per table
         foreach (var t in await deadTuplesTask)
         {
-            DeadTuplesPerTable.WithLabels(t.SchemaName, t.TableName).Set(t.DeadTupleCount);
+            DeadTuplesPerTable
+                .WithLabels(t.SchemaName, t.TableName)
+                .Set(t.DeadTupleCount);
         }
 
         _logger.LogDebug(

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Monitoring.Api.Data;
 using Monitoring.Api.Models;
 using Npgsql;
+using static Monitoring.Api.Constants;
 
 namespace Monitoring.Api.Repositories;
 
@@ -104,7 +105,7 @@ public sealed class PostgresRepository
             return await _context.SlowQueries
                 .CountAsync(q => q.MeanExecTime > 1000);
         }
-        catch (PostgresException ex) when (ex.SqlState == "42P01") // undefined_table
+        catch (PostgresException ex) when (ex.SqlState == Db.UndefinedTableSqlState)
         {
             _logger.LogDebug("pg_stat_statements extension not available; slow query count skipped.");
             return 0;

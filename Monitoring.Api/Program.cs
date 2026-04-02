@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Monitoring.Api;
 using Monitoring.Api.Data;
 using Monitoring.Api.Repositories;
 using Monitoring.Api.Routes;
@@ -6,6 +7,7 @@ using Monitoring.Api.Services;
 using Npgsql;
 using Prometheus;
 using Prometheus.DotNetRuntime;
+using static Monitoring.Api.Constants;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,11 +16,9 @@ builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer((doc, ctx, ct) =>
     {
-        doc.Info.Title       = "Monitoring API";
-        doc.Info.Version     = "v1";
-        doc.Info.Description =
-            "PostgreSQL monitoring API — exposes database health metrics as JSON endpoints " +
-            "and a Prometheus-compatible /metrics scrape endpoint.";
+        doc.Info.Title       = Api.Title;
+        doc.Info.Version     = Api.Version;
+        doc.Info.Description = Api.Description;
         return Task.CompletedTask;
     });
 });
@@ -31,8 +31,8 @@ builder.Services.AddProblemDetails(options =>
         if (ctx.Exception is NpgsqlException)
         {
             ctx.ProblemDetails.Status = StatusCodes.Status503ServiceUnavailable;
-            ctx.ProblemDetails.Title  = "Database Unavailable";
-            ctx.ProblemDetails.Detail = "Unable to reach the database. Please try again later.";
+            ctx.ProblemDetails.Title  = Errors.DatabaseUnavailableTitle;
+            ctx.ProblemDetails.Detail = Errors.DatabaseUnavailableDetail;
             ctx.HttpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
         }
     };
@@ -40,7 +40,7 @@ builder.Services.AddProblemDetails(options =>
 
 // --- Entity Framework Core ---
 builder.Services.AddDbContext<MonitoringDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres"))
+    options.UseNpgsql(builder.Configuration.GetConnectionString(Config.PostgresConnectionString))
            .UseSnakeCaseNamingConvention());
 
 // --- Repositories & background services ---
@@ -66,13 +66,13 @@ app.UseHttpMetrics();
 app.MapOpenApi();
 app.UseSwaggerUI(opts =>
 {
-    opts.SwaggerEndpoint("/openapi/v1.json", "Monitoring API v1");
-    opts.RoutePrefix = "swagger";
+    opts.SwaggerEndpoint(Api.OpenApiJsonEndpoint, Api.SwaggerEndpointTitle);
+    opts.RoutePrefix = Api.SwaggerRoutePrefix;
 });
 
 // --- Routes ---
-app.MapGet("/", () => "Monitoring API is running").ExcludeFromDescription();
+app.MapGet(Routes.Paths.Root, () => "Monitoring API is running").ExcludeFromDescription();
 app.MapMonitoringRoutes();
-app.MapMetrics("/metrics");
+app.MapMetrics(Routes.Paths.Metrics);
 
 app.Run();

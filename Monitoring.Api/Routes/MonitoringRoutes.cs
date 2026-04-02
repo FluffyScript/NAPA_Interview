@@ -7,52 +7,52 @@ public static class MonitoringRoutes
 {
     public static IEndpointRouteBuilder MapMonitoringRoutes(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/monitoring")
-            .WithTags("Monitoring")
+        var group = app.MapGroup(Constants.Routes.Paths.MonitoringGroup)
+            .WithTags(Constants.Routes.Tags.Monitoring)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
-        group.MapGet("/overview", async (PostgresRepository repo) =>
+        group.MapGet(Constants.Routes.Paths.Overview, async (PostgresRepository repo) =>
         {
             var data = await repo.GetOverviewAsync();
             return Results.Ok(data);
         })
-        .WithName("GetOverview")
-        .WithSummary("Database overview")
-        .WithDescription("Returns a snapshot of active sessions, blocked sessions, long-running queries, and the maximum query duration.")
+        .WithName(Constants.Routes.Names.GetOverview)
+        .WithSummary(Constants.Routes.Summaries.Overview)
+        .WithDescription(Constants.Routes.Descriptions.Overview)
         .Produces<OverviewDto>();
 
-        group.MapGet("/long-running", async (
+        group.MapGet(Constants.Routes.Paths.LongRunning, async (
             PostgresRepository repo,
             int thresholdSeconds = 30) =>
         {
             var queries = await repo.GetLongRunningQueriesAsync(thresholdSeconds);
             return Results.Ok(queries);
         })
-        .WithName("GetLongRunningQueries")
-        .WithSummary("Long-running queries")
-        .WithDescription("Lists queries that have been running longer than `thresholdSeconds` (default 30 s), ordered by duration descending.")
+        .WithName(Constants.Routes.Names.GetLongRunningQueries)
+        .WithSummary(Constants.Routes.Summaries.LongRunning)
+        .WithDescription(Constants.Routes.Descriptions.LongRunning)
         .Produces<IEnumerable<LongRunningQueryDto>>();
 
-        group.MapGet("/blocked", async (PostgresRepository repo) =>
+        group.MapGet(Constants.Routes.Paths.Blocked, async (PostgresRepository repo) =>
         {
             var sessions = await repo.GetBlockedSessionsAsync();
             return Results.Ok(sessions);
         })
-        .WithName("GetBlockedSessions")
-        .WithSummary("Blocked sessions")
-        .WithDescription("Lists sessions currently blocked by a lock, paired with the blocking session.")
+        .WithName(Constants.Routes.Names.GetBlockedSessions)
+        .WithSummary(Constants.Routes.Summaries.Blocked)
+        .WithDescription(Constants.Routes.Descriptions.Blocked)
         .Produces<IEnumerable<BlockedSessionDto>>();
 
-        group.MapGet("/dead-tuples", async (
+        group.MapGet(Constants.Routes.Paths.DeadTuples, async (
             PostgresRepository repo,
             int minDeadTuples = 100) =>
         {
             var tables = await repo.GetDeadTuplesAsync(minDeadTuples);
             return Results.Ok(tables);
         })
-        .WithName("GetDeadTuples")
-        .WithSummary("Dead tuples per table")
-        .WithDescription("Lists user tables with at least `minDeadTuples` dead tuples (default 100), ordered by dead tuple count descending.")
+        .WithName(Constants.Routes.Names.GetDeadTuples)
+        .WithSummary(Constants.Routes.Summaries.DeadTuples)
+        .WithDescription(Constants.Routes.Descriptions.DeadTuples)
         .Produces<IEnumerable<DeadTuplesDto>>();
 
         return app;

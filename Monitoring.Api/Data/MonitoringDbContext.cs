@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Monitoring.Api.Data.Entities;
+using static Monitoring.Api.Constants;
 
 namespace Monitoring.Api.Data;
 
@@ -34,8 +35,8 @@ public class MonitoringDbContext : DbContext
         modelBuilder.Entity<Order>(e =>
         {
             e.HasKey(o => o.Id);
-            e.Property(o => o.Status).HasDefaultValue("pending");
-            e.Property(o => o.CreatedAt).HasDefaultValueSql("now()");
+            e.Property(o => o.Status).HasDefaultValue(Db.DefaultOrderStatus);
+            e.Property(o => o.CreatedAt).HasDefaultValueSql(Db.TimestampDefaultSql);
         });
 
         // ── LongRunningQueryRow ───────────────────────────────────────────────

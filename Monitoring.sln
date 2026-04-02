@@ -8,10 +8,14 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 	ProjectSection(SolutionItems) = preProject
 		.dockerignore = .dockerignore
 		.gitignore = .gitignore
+		CLAUDE.md = CLAUDE.md
 		CONVERSATION_LOG.md = CONVERSATION_LOG.md
 		docker-compose.db-only.yml = docker-compose.db-only.yml
 		docker-compose.yml = docker-compose.yml
 		global.json = global.json
+		postgres\init.sql = postgres\init.sql
+		prometheus\prometheus.yml = prometheus\prometheus.yml
+		README.md = README.md
 		startme.md = startme.md
 	EndProjectSection
 EndProject
