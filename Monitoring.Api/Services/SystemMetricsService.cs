@@ -95,15 +95,37 @@ public sealed class SystemMetricsService : BackgroundService
         var s = _snapshot;
         if (s is null) return null;
 
+        long? usedBytes       = s.SystemMemoryTotalBytes > 0 && s.SystemMemoryAvailableBytes.HasValue
+            ? s.SystemMemoryTotalBytes - s.SystemMemoryAvailableBytes.Value
+            : null;
+        double? usagePct      = usedBytes.HasValue && s.SystemMemoryTotalBytes > 0
+            ? (double)usedBytes.Value / s.SystemMemoryTotalBytes * 100.0
+            : null;
+
         return new SystemMetricsDto(
             ProcessCpuPercent:          s.CpuPercent,
+            ProcessCpu:                 $"{s.CpuPercent:F1}%  ({Environment.ProcessorCount} logical cores)",
             ProcessMemoryBytes:         s.ProcessMemoryBytes,
+            ProcessMemory:              FormatBytes(s.ProcessMemoryBytes),
             SystemMemoryTotalBytes:     s.SystemMemoryTotalBytes,
+            SystemMemoryTotal:          s.SystemMemoryTotalBytes > 0 ? FormatBytes(s.SystemMemoryTotalBytes) : "N/A",
             SystemMemoryAvailableBytes: s.SystemMemoryAvailableBytes,
+            SystemMemoryAvailable:      s.SystemMemoryAvailableBytes.HasValue ? FormatBytes(s.SystemMemoryAvailableBytes.Value) : null,
+            SystemMemoryUsedBytes:      usedBytes,
+            SystemMemoryUsed:           usedBytes.HasValue ? FormatBytes(usedBytes.Value) : null,
+            SystemMemoryUsage:          usagePct.HasValue ? $"{usagePct.Value:F1}% used" : null,
             ProcessorCount:             Environment.ProcessorCount,
             Platform:                   _platform,
             Timestamp:                  s.Timestamp
         );
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes >= 1_073_741_824L) return $"{bytes / 1_073_741_824.0:F1} GB";
+        if (bytes >= 1_048_576L)     return $"{bytes / 1_048_576.0:F1} MB";
+        if (bytes >= 1_024L)         return $"{bytes / 1_024.0:F1} KB";
+        return $"{bytes} B";
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

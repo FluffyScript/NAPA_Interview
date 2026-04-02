@@ -31,11 +31,27 @@ public record DeadTuplesDto(
 );
 
 public record SystemMetricsDto(
+    // ── CPU ──────────────────────────────────────────────────────────────────
     double ProcessCpuPercent,
-    long ProcessMemoryBytes,
-    long SystemMemoryTotalBytes,
-    long? SystemMemoryAvailableBytes,
-    int ProcessorCount,
+    string ProcessCpu,               // e.g. "12.3%  (8 logical cores)"
+
+    // ── Process memory ────────────────────────────────────────────────────────
+    long   ProcessMemoryBytes,
+    string ProcessMemory,            // e.g. "128.4 MB"
+
+    // ── System memory ─────────────────────────────────────────────────────────
+    long   SystemMemoryTotalBytes,
+    string SystemMemoryTotal,        // e.g. "15.9 GB"
+
+    long?  SystemMemoryAvailableBytes,
+    string? SystemMemoryAvailable,   // e.g. "8.2 GB"   — Linux only, null on Windows
+
+    long?  SystemMemoryUsedBytes,
+    string? SystemMemoryUsed,        // e.g. "7.7 GB"   — Linux only, null on Windows
+    string? SystemMemoryUsage,       // e.g. "48.4% used" — Linux only, null on Windows
+
+    // ── Meta ─────────────────────────────────────────────────────────────────
+    int    ProcessorCount,
     string Platform,
     DateTimeOffset Timestamp
 );
