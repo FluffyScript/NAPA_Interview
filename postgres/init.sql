@@ -1,8 +1,9 @@
--- Enable pg_stat_statements extension for slow-query tracking
--- This must run as a superuser (the default postgres init user qualifies).
+-- pg_stat_statements must be listed in shared_preload_libraries before this runs.
+-- Both docker-compose.yml and docker-compose.db-only.yml pass:
+--   command: postgres -c shared_preload_libraries=pg_stat_statements
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 
--- Example schema for local development / testing
+-- Sample schema for local development and testing
 CREATE TABLE IF NOT EXISTS orders (
     id          BIGSERIAL PRIMARY KEY,
     customer_id BIGINT NOT NULL,
