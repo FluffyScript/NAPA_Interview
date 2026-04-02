@@ -1,0 +1,19 @@
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Scrape the .NET monitoring API
+  - job_name: "monitoring-api"
+    static_configs:
+      - targets: ["monitoring-api:8080"]
+
+  # Scrape Prometheus itself
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Uncomment when Node Exporter is added for host CPU/RAM metrics
+  # - job_name: "node"
+  #   static_configs:
+  #     - targets: ["node-exporter:9100"]
