@@ -47,6 +47,11 @@ builder.Services.AddDbContext<MonitoringDbContext>(options =>
 builder.Services.AddScoped<PostgresRepository>();
 builder.Services.AddHostedService<PostgresMonitoringCollector>();
 
+// SystemMetricsService is registered as a singleton so routes can inject it directly,
+// and as a hosted service so the background sampling loop runs automatically.
+builder.Services.AddSingleton<SystemMetricsService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SystemMetricsService>());
+
 var app = builder.Build();
 
 // --- .NET runtime metrics (GC, threadpool, contention, exceptions) ---

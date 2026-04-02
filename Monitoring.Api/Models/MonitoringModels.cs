@@ -29,3 +29,13 @@ public record DeadTuplesDto(
     long DeadTupleCount,
     long LiveTupleCount
 );
+
+public record SystemMetricsDto(
+    double ProcessCpuPercent,
+    long ProcessMemoryBytes,
+    long SystemMemoryTotalBytes,
+    long? SystemMemoryAvailableBytes,
+    int ProcessorCount,
+    string Platform,
+    DateTimeOffset Timestamp
+);

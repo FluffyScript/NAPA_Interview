@@ -189,6 +189,124 @@ Content-Type: application/problem+json
 
 ---
 
+## 10 — Wire Docker Postgres credentials and add startme.md
+
+**User:** Read the connection details in appsettings.json and add all this to a Docker container that spins up a PostgreSQL database. Prepare an entry in a new file called `startme.md` and log how to switch between local PostgreSQL connection as it is now and the Docker variant.
+
+**What was done:**
+- Added `docker-compose.db-only.yml` — spins up only the Postgres container (without the API), so the API can still run locally under `dotnet run`.
+- Updated `docker-compose.yml` to inject the real credentials from `appsettings.json` into the container via environment variables. The `$` in the password (`ihnte$*(&)%Yhjn9y53`) must be written as `$$` in YAML to produce a literal `$` inside the container.
+- `postgres/init.sql` already creates the `interview_user` role, `NAPA_Interview` database, and enables `pg_stat_statements`.
+- Created `startme.md` explaining two modes:
+  - **Mode A (local API + Docker DB):** `docker compose -f docker-compose.db-only.yml up -d` → `dotnet run`
+  - **Mode B (full stack in Docker):** `docker compose up --build`
+- Included a password-escaping table for the `$` → `$$` pitfall.
+
+---
+
+## 11 — Run the solution
+
+**User:** Run the solution.
+
+**What was done:**
+- Discovered `dotnet` is not on PATH; used full path `C:\Program Files\dotnet\dotnet.exe`.
+- Started Docker DB via `docker-compose.db-only.yml`.
+- `dotnet run` started the API on ports 64965 (HTTP) and 64964 (HTTPS) per `launchSettings.json`.
+- Verified endpoints: `/swagger`, `/api/monitoring/overview`, `/metrics` all responding.
+- **Commit:** `d4a0b0f` — *Add Docker DB-only compose, startme.md, and fix password escaping*.
+
+---
+
+## 12 — Add Entity Framework Core
+
+**User:** Please use .NET Entity Framework in the app if possible. I would like to have a DbContext if possible.
+
+**What was done:**
+
+Added packages to `Monitoring.Api.csproj`:
+```
+Npgsql.EntityFrameworkCore.PostgreSQL   9.0.4
+EFCore.NamingConventions                9.0.0
+Microsoft.EntityFrameworkCore.Design    9.0.4
+```
+
+Created `Monitoring.Api/Data/`:
+- `MonitoringDbContext.cs` — owns the connection, maps `Order` entity, and defines all keyless read-only views via `HasNoKey().ToSqlQuery(...)`.
+- `Entities/Order.cs` — real tracked table (`orders`), migratable.
+- `Entities/LongRunningQueryRow.cs`, `BlockedSessionRow.cs`, `DeadTuplesRow.cs`, `OverviewRow.cs`, `SlowQueryRow.cs` — keyless entities backed by `pg_stat_*` SQL views.
+
+Updated `PostgresRepository.cs` to use `MonitoringDbContext` (Dapper removed).
+
+**Design principle established:** *SQL belongs in `DbContext.OnModelCreating`. Repositories contain only LINQ.*
+
+---
+
+## 13 — Refactor repository to pure LINQ
+
+**User:** The PostgresRepository.cs file is still using scripts, please refactor it and make a note for yourself to remember checking if code needs to be updated elsewhere, feel free to build a code of conduct worthy of a senior .NET developer.
+
+**What was done:**
+- All inline SQL strings removed from `PostgresRepository.cs`.
+- Background collector methods (`GetLongRunningQueryCountAsync`, `GetBlockedSessionCountAsync`, etc.) converted from raw `QuerySingleAsync` calls to LINQ `.CountAsync()` / `.MaxAsync()` on existing keyless `DbSet<T>` members.
+- Eliminated the `CountRow` keyless entity (was only needed to hold scalar results; now `.CountAsync()` is used directly).
+- `GetSlowQueryCountAsync` wraps the query in a `try/catch (PostgresException)` for `SqlState == "42P01"` — gracefully handles missing `pg_stat_statements` extension.
+- Updated `CLAUDE.md` with a "Code of Conduct" section (10 rules for senior .NET development on this project).
+
+---
+
+## 14 — Centralize constants and add Solution Items
+
+**User:** The string values in PostgresMonitoringCollector.cs are not centralized in a Constants static class, refactor the whole solution. Also, please add any external items in the solution or project for reference so that a programmer can view them in their Visual Studio 2026 IDE.
+
+**What was done:**
+- Created `Monitoring.Api/Constants.cs` — single source of truth for all named strings, organized into nested static classes:
+  - `Metrics.Names`, `Metrics.Descriptions`, `Metrics.Labels`
+  - `Routes.Paths`, `Routes.Names`, `Routes.Tags`, `Routes.Summaries`, `Routes.Descriptions`
+  - `Config`, `Api`, `Errors`, `Db`
+- Updated `PostgresMonitoringCollector.cs`, `MonitoringRoutes.cs`, `Program.cs`, `PostgresRepository.cs`, `MonitoringDbContext.cs` to use constants.
+- Resolved two `using static Constants` naming collisions:
+  1. `Metrics` ambiguous with `Prometheus.Metrics` in the collector → used `Constants.Metrics.Names.X` fully qualified.
+  2. `Routes` ambiguous with the `Monitoring.Api.Routes` namespace → same fix.
+- Added `Solution Items` section to `Monitoring.sln` so `.dockerignore`, `.gitignore`, `CONVERSATION_LOG.md`, `docker-compose*.yml`, `global.json`, `postgres/init.sql`, `prometheus/prometheus.yml`, `startme.md` all appear in Visual Studio Solution Explorer.
+- **Commit:** `36079d9` — *Refactor: centralize all string literals into Constants.cs; add Solution Items*.
+
+---
+
+## 15 — Add cross-platform CPU/RAM monitoring endpoint
+
+**User:** Devise a plan to monitor CPU and RAM usage. Start with dotnet integrated monitoring tools and return a result if these tools prove to work, or return a message explaining that the endpoint isn't available. I would like the app to run on Ubuntu/Linux style systems as well as Windows 11 or 10.
+
+**What was done:**
+
+**`Services/SystemMetricsService.cs`** (new singleton BackgroundService):
+- Samples every 5 seconds using `System.Diagnostics.Process.GetCurrentProcess()` — fully cross-platform.
+- **CPU:** Delta of `Process.TotalProcessorTime` over a 5-second wall-clock window, divided by `ProcessorCount`. Returns a `0–100 %` value.
+- **Process memory:** `Process.WorkingSet64` (resident set size) — cross-platform.
+- **System RAM (Linux):** Reads `/proc/meminfo` for `MemTotal` and `MemAvailable`.
+- **System RAM (Windows):** Uses `GC.GetGCMemoryInfo().TotalAvailableMemoryBytes` for total. Available RAM requires P/Invoke (`GlobalMemoryStatusEx`) which was intentionally skipped to keep the codebase dependency-free; field is `null` on Windows.
+- Latest sample stored in a `volatile` snapshot field; Prometheus gauges updated on each sample.
+- Returns `503` on the endpoint if no sample has been collected yet (first 5 seconds).
+
+**New Prometheus gauges added:**
+| Metric | Description |
+|--------|-------------|
+| `process_cpu_usage_percent` | 5-second rolling CPU % |
+| `process_memory_bytes` | Process working-set (RSS) |
+| `system_memory_total_bytes` | Total installed RAM |
+| `system_memory_available_bytes` | Available RAM (Linux only) |
+
+**`Models/MonitoringModels.cs`** — added `SystemMetricsDto` record.
+
+**`Constants.cs`** — added `Routes.Paths.System`, `Routes.Names.GetSystemMetrics`, `Routes.Summaries.System`, `Routes.Descriptions.System`, four new `Metrics.Names.*` and `Metrics.Descriptions.*` entries.
+
+**`Routes/MonitoringRoutes.cs`** — added `GET /api/monitoring/system`.
+
+**`Program.cs`** — registered `SystemMetricsService` as both singleton (for DI injection into routes) and hosted service.
+
+**Build result:** 0 errors, 0 warnings.
+
+---
+
 ## Final git log
 
 | Hash | Message |
@@ -196,7 +314,11 @@ Content-Type: application/problem+json
 | `7671fe3` | Initial commit: .NET 10 Postgres monitoring API with prometheus-net, Swagger, and Docker setup |
 | `f546fa7` | Refactor: extract monitoring routes to MonitoringRoutes extension method |
 | `5d988dc` | Docs: rewrite README with architecture diagram, full API reference, metrics table, and design decisions |
-| *(this commit)* | Docs: add conversation log |
+| `(log)` | Docs: add conversation log (steps 1–9) |
+| `d4a0b0f` | Add Docker DB-only compose, startme.md, and fix password escaping |
+| `(EF)` | Feature: add Entity Framework Core DbContext, pure-LINQ repository, CLAUDE.md code of conduct |
+| `36079d9` | Refactor: centralize all string literals into Constants.cs; add Solution Items |
+| *(this commit)* | Feature: add cross-platform CPU/RAM SystemMetricsService; update conversation log |
 
 ## Final project state
 
@@ -205,25 +327,38 @@ Content-Type: application/problem+json
 ├── .dockerignore
 ├── .gitignore
 ├── CLAUDE.md
-├── CONVERSATION_LOG.md          ← this file
+├── CONVERSATION_LOG.md              ← this file
 ├── Monitoring.sln
 ├── README.md
+├── docker-compose.db-only.yml
 ├── docker-compose.yml
 ├── global.json
+├── startme.md
 ├── Monitoring.Api/
 │   ├── Dockerfile
 │   ├── Monitoring.Api.csproj
 │   ├── Program.cs
+│   ├── Constants.cs                 ← single source of truth for all string literals
 │   ├── appsettings.Development.json
 │   ├── appsettings.json
+│   ├── Data/
+│   │   ├── MonitoringDbContext.cs   ← all SQL lives here via ToSqlQuery()
+│   │   └── Entities/
+│   │       ├── Order.cs
+│   │       ├── LongRunningQueryRow.cs
+│   │       ├── BlockedSessionRow.cs
+│   │       ├── DeadTuplesRow.cs
+│   │       ├── OverviewRow.cs
+│   │       └── SlowQueryRow.cs
 │   ├── Models/
-│   │   └── MonitoringModels.cs
+│   │   └── MonitoringModels.cs      ← DTOs (OverviewDto, LongRunningQueryDto, …, SystemMetricsDto)
 │   ├── Repositories/
-│   │   └── PostgresRepository.cs
+│   │   └── PostgresRepository.cs   ← pure LINQ, no SQL strings
 │   ├── Routes/
 │   │   └── MonitoringRoutes.cs
 │   └── Services/
-│       └── PostgresMonitoringCollector.cs
+│       ├── PostgresMonitoringCollector.cs
+│       └── SystemMetricsService.cs  ← cross-platform CPU/RAM; /api/monitoring/system
 ├── postgres/
 │   └── init.sql
 └── prometheus/

@@ -15,13 +15,17 @@ public static class Constants
     {
         public static class Names
         {
-            public const string LongRunningQueries = "postgres_long_running_queries";
-            public const string BlockedSessions     = "postgres_blocked_sessions";
-            public const string ActiveSessions      = "postgres_active_sessions";
-            public const string SlowQueryCount      = "postgres_slow_query_count";
-            public const string DeadTuples          = "postgres_dead_tuples";
-            public const string CollectionsTotal    = "monitoring_collections_total";
-            public const string CollectionDuration  = "monitoring_collection_duration_seconds";
+            public const string LongRunningQueries       = "postgres_long_running_queries";
+            public const string BlockedSessions          = "postgres_blocked_sessions";
+            public const string ActiveSessions           = "postgres_active_sessions";
+            public const string SlowQueryCount           = "postgres_slow_query_count";
+            public const string DeadTuples               = "postgres_dead_tuples";
+            public const string CollectionsTotal         = "monitoring_collections_total";
+            public const string CollectionDuration       = "monitoring_collection_duration_seconds";
+            public const string ProcessCpuPercent        = "process_cpu_usage_percent";
+            public const string ProcessMemoryBytes       = "process_memory_bytes";
+            public const string SystemMemoryTotalBytes   = "system_memory_total_bytes";
+            public const string SystemMemoryAvailableBytes = "system_memory_available_bytes";
         }
 
         public static class Descriptions
@@ -33,6 +37,12 @@ public static class Constants
             public const string DeadTuples          = "Dead tuple count per user table.";
             public const string CollectionsTotal    = "Total number of completed Postgres metric collection cycles.";
             public const string CollectionDuration  = "Time taken to complete one Postgres metric collection cycle.";
+            public const string ProcessCpuPercent   = "Process CPU usage as a percentage of total available CPU (sampled every 5 s).";
+            public const string ProcessMemoryBytes  = "Process working-set memory in bytes.";
+            public const string SystemMemoryTotalBytes =
+                "Total installed system RAM in bytes. Linux: read from /proc/meminfo. Windows: approximated via GCMemoryInfo.";
+            public const string SystemMemoryAvailableBytes =
+                "Available system RAM in bytes. Linux only (/proc/meminfo). Returns 0 on Windows.";
         }
 
         public static class Labels
@@ -54,15 +64,17 @@ public static class Constants
             public const string LongRunning     = "/long-running";
             public const string Blocked         = "/blocked";
             public const string DeadTuples      = "/dead-tuples";
+            public const string System          = "/system";
             public const string Metrics         = "/metrics";
         }
 
         public static class Names
         {
-            public const string GetOverview          = "GetOverview";
+            public const string GetOverview           = "GetOverview";
             public const string GetLongRunningQueries = "GetLongRunningQueries";
-            public const string GetBlockedSessions   = "GetBlockedSessions";
-            public const string GetDeadTuples        = "GetDeadTuples";
+            public const string GetBlockedSessions    = "GetBlockedSessions";
+            public const string GetDeadTuples         = "GetDeadTuples";
+            public const string GetSystemMetrics      = "GetSystemMetrics";
         }
 
         public static class Tags
@@ -76,6 +88,7 @@ public static class Constants
             public const string LongRunning = "Long-running queries";
             public const string Blocked     = "Blocked sessions";
             public const string DeadTuples  = "Dead tuples per table";
+            public const string System      = "System resource usage";
         }
 
         public static class Descriptions
@@ -91,6 +104,11 @@ public static class Constants
 
             public const string DeadTuples =
                 "Lists user tables with at least `minDeadTuples` dead tuples (default 100), ordered by dead tuple count descending.";
+
+            public const string System =
+                "Returns process CPU and memory usage, plus system-level RAM on Linux. " +
+                "CPU is a rolling 5-second average. System RAM is read from /proc/meminfo on Linux; " +
+                "approximated via GCMemoryInfo on Windows.";
         }
     }
 

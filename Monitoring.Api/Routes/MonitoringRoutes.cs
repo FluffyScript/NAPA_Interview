@@ -1,5 +1,6 @@
 using Monitoring.Api.Models;
 using Monitoring.Api.Repositories;
+using Monitoring.Api.Services;
 
 namespace Monitoring.Api.Routes;
 
@@ -54,6 +55,20 @@ public static class MonitoringRoutes
         .WithSummary(Constants.Routes.Summaries.DeadTuples)
         .WithDescription(Constants.Routes.Descriptions.DeadTuples)
         .Produces<IEnumerable<DeadTuplesDto>>();
+
+        group.MapGet(Constants.Routes.Paths.System, (SystemMetricsService svc) =>
+        {
+            var snapshot = svc.GetSnapshot();
+            return snapshot is null
+                ? Results.Problem(
+                    detail: "System metrics not yet available — wait a few seconds for the first sample.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable)
+                : Results.Ok(snapshot);
+        })
+        .WithName(Constants.Routes.Names.GetSystemMetrics)
+        .WithSummary(Constants.Routes.Summaries.System)
+        .WithDescription(Constants.Routes.Descriptions.System)
+        .Produces<SystemMetricsDto>();
 
         return app;
     }
