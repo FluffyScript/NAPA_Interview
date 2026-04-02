@@ -307,6 +307,56 @@ Updated `PostgresRepository.cs` to use `MonitoringDbContext` (Dapper removed).
 
 ---
 
+## 16 — Human-readable CPU and RAM output
+
+**User:** Please interpret the system results of CPU and RAM usage and make them more readable to a human being.
+
+**What was done:**
+
+Expanded `SystemMetricsDto` with formatted string companion fields and computed "used memory" values:
+
+| New field | Example value | Notes |
+|---|---|---|
+| `ProcessCpu` | `"4.2%  (8 logical cores)"` | CPU % + core count in one string |
+| `ProcessMemory` | `"128.3 MB"` | Process working-set formatted |
+| `SystemMemoryTotal` | `"15.9 GB"` | Total system RAM formatted |
+| `SystemMemoryAvailable` | `"8.2 GB"` | Linux only; `null` on Windows |
+| `SystemMemoryUsed` | `"7.6 GB"` | Derived: total − available; Linux only |
+| `SystemMemoryUsage` | `"48.1% used"` | Derived: used / total × 100; Linux only |
+
+Added `FormatBytes(long bytes)` helper to `SystemMetricsService` — converts raw bytes to `B / KB / MB / GB` with one decimal place.
+
+Raw byte fields (`ProcessMemoryBytes`, `SystemMemoryTotalBytes`, etc.) are retained alongside formatted strings for programmatic use.
+
+**Example response on Linux:**
+```json
+{
+  "processCpu": "4.2%  (8 logical cores)",
+  "processMemory": "128.3 MB",
+  "systemMemoryTotal": "15.9 GB",
+  "systemMemoryAvailable": "8.2 GB",
+  "systemMemoryUsed": "7.6 GB",
+  "systemMemoryUsage": "48.1% used",
+  "platform": "Linux 6.x ...",
+  "timestamp": "2026-04-02T14:30:00+00:00"
+}
+```
+
+**Build result:** 0 errors, 0 warnings.
+**Commit:** `2c4074c`
+
+---
+
+## 17 — Save conversation log
+
+**User:** Save all the conversation in this terminal in a file in the solution.
+
+**What was done:**
+- Updated `CONVERSATION_LOG.md` with steps 16–17 (all activity since the last log update).
+- Updated the git log table and project structure tree.
+
+---
+
 ## Final git log
 
 | Hash | Message |
@@ -318,7 +368,9 @@ Updated `PostgresRepository.cs` to use `MonitoringDbContext` (Dapper removed).
 | `d4a0b0f` | Add Docker DB-only compose, startme.md, and fix password escaping |
 | `(EF)` | Feature: add Entity Framework Core DbContext, pure-LINQ repository, CLAUDE.md code of conduct |
 | `36079d9` | Refactor: centralize all string literals into Constants.cs; add Solution Items |
-| *(this commit)* | Feature: add cross-platform CPU/RAM SystemMetricsService; update conversation log |
+| `07123fd` | Feature: cross-platform CPU/RAM monitoring endpoint + conversation log update |
+| `2c4074c` | Feature: human-readable CPU and RAM fields on /system endpoint |
+| *(this commit)* | Docs: update conversation log with steps 16–17 |
 
 ## Final project state
 
@@ -358,7 +410,7 @@ Updated `PostgresRepository.cs` to use `MonitoringDbContext` (Dapper removed).
 │   │   └── MonitoringRoutes.cs
 │   └── Services/
 │       ├── PostgresMonitoringCollector.cs
-│       └── SystemMetricsService.cs  ← cross-platform CPU/RAM; /api/monitoring/system
+│       └── SystemMetricsService.cs  ← cross-platform CPU/RAM; /api/monitoring/system; human-readable output
 ├── postgres/
 │   └── init.sql
 └── prometheus/
