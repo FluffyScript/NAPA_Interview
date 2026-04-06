@@ -33,6 +33,7 @@
 | Prometheus metrics | `prometheus-net.AspNetCore` + `prometheus-net.DotNetRuntime` |
 | OpenAPI spec | `Microsoft.AspNetCore.OpenApi` (built-in .NET 10) |
 | Swagger UI | `Swashbuckle.AspNetCore.SwaggerUI` at `/swagger` |
+| DB host metrics | `node_exporter` (Prometheus) — CPU and memory from the database host |
 | Error responses | RFC 7807 Problem Details |
 
 ---
@@ -57,6 +58,7 @@ Monitoring.Api/
   Repositories/PostgresRepository.cs       — pure LINQ over DbSets; no SQL strings
   Routes/MonitoringRoutes.cs               — endpoint definitions as extension method
   Services/PostgresMonitoringCollector.cs  — BackgroundService → prometheus-net gauges
+  Services/SystemMetricsService.cs        — BackgroundService → polls node_exporter for DB host CPU/memory
   Dockerfile
 prometheus/prometheus.yml
 postgres/init.sql

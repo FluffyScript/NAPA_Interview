@@ -22,10 +22,9 @@ public static class Constants
             public const string DeadTuples               = "postgres_dead_tuples";
             public const string CollectionsTotal         = "monitoring_collections_total";
             public const string CollectionDuration       = "monitoring_collection_duration_seconds";
-            public const string ProcessCpuPercent        = "process_cpu_usage_percent";
-            public const string ProcessMemoryBytes       = "process_memory_bytes";
-            public const string SystemMemoryTotalBytes   = "system_memory_total_bytes";
-            public const string SystemMemoryAvailableBytes = "system_memory_available_bytes";
+            public const string DbHostCpuPercent            = "dbhost_cpu_usage_percent";
+            public const string DbHostMemoryTotalBytes     = "dbhost_memory_total_bytes";
+            public const string DbHostMemoryAvailableBytes = "dbhost_memory_available_bytes";
         }
 
         public static class Descriptions
@@ -37,12 +36,12 @@ public static class Constants
             public const string DeadTuples          = "Dead tuple count per user table.";
             public const string CollectionsTotal    = "Total number of completed Postgres metric collection cycles.";
             public const string CollectionDuration  = "Time taken to complete one Postgres metric collection cycle.";
-            public const string ProcessCpuPercent   = "Process CPU usage as a percentage of total available CPU (sampled every 5 s).";
-            public const string ProcessMemoryBytes  = "Process working-set memory in bytes.";
-            public const string SystemMemoryTotalBytes =
-                "Total installed system RAM in bytes. Linux: read from /proc/meminfo. Windows: approximated via GCMemoryInfo.";
-            public const string SystemMemoryAvailableBytes =
-                "Available system RAM in bytes. Linux only (/proc/meminfo). Returns 0 on Windows.";
+            public const string DbHostCpuPercent =
+                "Database host CPU usage as a percentage (sampled every 5 s from node_exporter).";
+            public const string DbHostMemoryTotalBytes =
+                "Database host total installed RAM in bytes (from node_exporter).";
+            public const string DbHostMemoryAvailableBytes =
+                "Database host available RAM in bytes (from node_exporter).";
         }
 
         public static class Labels
@@ -106,9 +105,8 @@ public static class Constants
                 "Lists user tables with at least `minDeadTuples` dead tuples (default 100), ordered by dead tuple count descending.";
 
             public const string System =
-                "Returns process CPU and memory usage, plus system-level RAM on Linux. " +
-                "CPU is a rolling 5-second average. System RAM is read from /proc/meminfo on Linux; " +
-                "approximated via GCMemoryInfo on Windows.";
+                "Returns database host CPU and memory usage, fetched from a node_exporter instance " +
+                "running alongside PostgreSQL. CPU is computed from counter deltas over a 5-second window.";
         }
     }
 
@@ -118,6 +116,7 @@ public static class Constants
     {
         public const string PostgresConnectionString  = "Postgres";
         public const string CollectionIntervalSeconds = "Monitoring:CollectionIntervalSeconds";
+        public const string NodeExporterUrl           = "Monitoring:NodeExporterUrl";
     }
 
     // ── OpenAPI / Swagger ─────────────────────────────────────────────────────

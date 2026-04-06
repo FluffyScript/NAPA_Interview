@@ -13,7 +13,8 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  # Uncomment when Node Exporter is added for host CPU/RAM metrics
-  # - job_name: "node"
-  #   static_configs:
-  #     - targets: ["node-exporter:9100"]
+  # Node Exporter — database host CPU/RAM metrics
+  # node_exporter shares postgres's network namespace, so it's reachable at postgres:9100.
+  - job_name: "node"
+    static_configs:
+      - targets: ["postgres:9100"]

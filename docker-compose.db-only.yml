@@ -6,11 +6,31 @@
 #   docker compose -f docker-compose.db-only.yml down
 
 services:
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    pid: "service:postgres"
+    network_mode: "service:postgres"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   postgres:
     image: postgres:17
     container_name: postgres
     ports:
       - "5432:5432"
+      - "9100:9100"
     environment:
       POSTGRES_DB: NAPA_Interview
       POSTGRES_USER: interview_user

@@ -20,10 +20,9 @@ public sealed class ConstantsTests
     [InlineData("postgres_dead_tuples")]
     [InlineData("monitoring_collections_total")]
     [InlineData("monitoring_collection_duration_seconds")]
-    [InlineData("process_cpu_usage_percent")]
-    [InlineData("process_memory_bytes")]
-    [InlineData("system_memory_total_bytes")]
-    [InlineData("system_memory_available_bytes")]
+    [InlineData("dbhost_cpu_usage_percent")]
+    [InlineData("dbhost_memory_total_bytes")]
+    [InlineData("dbhost_memory_available_bytes")]
     public void MetricNames_AreNotAccidentallyChanged(string expectedName)
     {
         var allNames = new[]
@@ -35,10 +34,9 @@ public sealed class ConstantsTests
             Constants.Metrics.Names.DeadTuples,
             Constants.Metrics.Names.CollectionsTotal,
             Constants.Metrics.Names.CollectionDuration,
-            Constants.Metrics.Names.ProcessCpuPercent,
-            Constants.Metrics.Names.ProcessMemoryBytes,
-            Constants.Metrics.Names.SystemMemoryTotalBytes,
-            Constants.Metrics.Names.SystemMemoryAvailableBytes
+            Constants.Metrics.Names.DbHostCpuPercent,
+            Constants.Metrics.Names.DbHostMemoryTotalBytes,
+            Constants.Metrics.Names.DbHostMemoryAvailableBytes
         };
 
         Assert.Contains(expectedName, allNames);
@@ -98,6 +96,12 @@ public sealed class ConstantsTests
     public void ConfigKeys_CollectionInterval_IsCorrect()
     {
         Assert.Equal("Monitoring:CollectionIntervalSeconds", Constants.Config.CollectionIntervalSeconds);
+    }
+
+    [Fact]
+    public void ConfigKeys_NodeExporterUrl_IsCorrect()
+    {
+        Assert.Equal("Monitoring:NodeExporterUrl", Constants.Config.NodeExporterUrl);
     }
 
     // ── Database constants ───────────────────────────────────────────────────

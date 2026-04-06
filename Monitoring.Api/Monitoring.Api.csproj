@@ -9,6 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Monitoring.Api.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Prometheus (native client — replaces OpenTelemetry exporter) -->
     <PackageReference Include="prometheus-net.AspNetCore" Version="8.2.1" />
     <PackageReference Include="prometheus-net.DotNetRuntime" Version="4.4.1" />

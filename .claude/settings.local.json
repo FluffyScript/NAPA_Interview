@@ -10,7 +10,11 @@
       "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" build Monitoring.Api.Tests/Monitoring.Api.Tests.csproj)",
       "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" test Monitoring.Api.Tests/Monitoring.Api.Tests.csproj --verbosity normal)",
       "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" test Monitoring.Api.Tests/Monitoring.Api.Tests.csproj --verbosity minimal)",
-      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" build Monitoring.Api/Monitoring.Api.csproj)"
+      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" build Monitoring.Api/Monitoring.Api.csproj)",
+      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" build \"C:\\\\Users\\\\radul\\\\Documents\\\\__AA__NAPA_INTERVIU\\\\NAPA_Interview-main\\\\Monitoring.Api\\\\Monitoring.Api.csproj\")",
+      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" test \"C:\\\\Users\\\\radul\\\\Documents\\\\__AA__NAPA_INTERVIU\\\\NAPA_Interview-main\\\\Monitoring.Api.Tests\\\\Monitoring.Api.Tests.csproj\" --verbosity normal)",
+      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" test \"C:\\\\Users\\\\radul\\\\Documents\\\\__AA__NAPA_INTERVIU\\\\NAPA_Interview-main\\\\Monitoring.Api.Tests\\\\Monitoring.Api.Tests.csproj\" --no-restore)",
+      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" test \"C:\\\\Users\\\\radul\\\\Documents\\\\__AA__NAPA_INTERVIU\\\\NAPA_Interview-main\\\\Monitoring.Api.Tests\\\\Monitoring.Api.Tests.csproj\")"
     ]
   }
 }

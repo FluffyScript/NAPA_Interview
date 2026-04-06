@@ -47,6 +47,9 @@ builder.Services.AddDbContext<MonitoringDbContext>(options =>
 builder.Services.AddScoped<PostgresRepository>();
 builder.Services.AddHostedService<PostgresMonitoringCollector>();
 
+// HttpClient for node_exporter polling
+builder.Services.AddHttpClient();
+
 // SystemMetricsService is registered as a singleton so routes can inject it directly,
 // and as a hosted service so the background sampling loop runs automatically.
 builder.Services.AddSingleton<SystemMetricsService>();

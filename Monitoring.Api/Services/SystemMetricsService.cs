@@ -1,20 +1,17 @@
+using System.Globalization;
 using Monitoring.Api.Models;
 using Prometheus;
-using System.Runtime.InteropServices;
 
 namespace Monitoring.Api.Services;
 
 /// <summary>
-/// Singleton background service that samples process CPU and memory every 5 seconds.
+/// Singleton background service that polls a node_exporter instance every 5 seconds
+/// to collect CPU and memory metrics for the database host.
 ///
-/// CPU:    delta of Process.TotalProcessorTime / (wall-clock delta × ProcessorCount).
-///         Cross-platform — works identically on Linux and Windows.
+/// CPU:    Computed from delta of node_cpu_seconds_total counters across all cores.
+///         Usage% = (1 − idle_delta / total_delta) × 100.
 ///
-/// Memory: Process.WorkingSet64 for process RSS (cross-platform).
-///         System total and available RAM:
-///           Linux   → /proc/meminfo (MemTotal / MemAvailable).
-///           Windows → GCMemoryInfo.TotalAvailableMemoryBytes for total;
-///                     available is not exposed without P/Invoke so it is reported as null.
+/// Memory: node_memory_MemTotal_bytes and node_memory_MemAvailable_bytes.
 ///
 /// The latest sample is stored in <see cref="GetSnapshot"/> for the /system HTTP endpoint.
 /// Prometheus gauges are updated on each sample so Prometheus scrapes are always current.
@@ -23,58 +20,51 @@ public sealed class SystemMetricsService : BackgroundService
 {
     // --- Prometheus instruments (static — survive DI scope changes) ---
 
-    private static readonly Gauge ProcessCpuPercent = Metrics.CreateGauge(
-        Constants.Metrics.Names.ProcessCpuPercent,
-        Constants.Metrics.Descriptions.ProcessCpuPercent);
+    private static readonly Gauge DbHostCpuPercent = Metrics.CreateGauge(
+        Constants.Metrics.Names.DbHostCpuPercent,
+        Constants.Metrics.Descriptions.DbHostCpuPercent);
 
-    private static readonly Gauge ProcessMemoryBytes = Metrics.CreateGauge(
-        Constants.Metrics.Names.ProcessMemoryBytes,
-        Constants.Metrics.Descriptions.ProcessMemoryBytes);
+    private static readonly Gauge DbHostMemoryTotalBytes = Metrics.CreateGauge(
+        Constants.Metrics.Names.DbHostMemoryTotalBytes,
+        Constants.Metrics.Descriptions.DbHostMemoryTotalBytes);
 
-    private static readonly Gauge SystemMemoryTotalBytes = Metrics.CreateGauge(
-        Constants.Metrics.Names.SystemMemoryTotalBytes,
-        Constants.Metrics.Descriptions.SystemMemoryTotalBytes);
-
-    private static readonly Gauge SystemMemoryAvailableBytes = Metrics.CreateGauge(
-        Constants.Metrics.Names.SystemMemoryAvailableBytes,
-        Constants.Metrics.Descriptions.SystemMemoryAvailableBytes);
+    private static readonly Gauge DbHostMemoryAvailableBytes = Metrics.CreateGauge(
+        Constants.Metrics.Names.DbHostMemoryAvailableBytes,
+        Constants.Metrics.Descriptions.DbHostMemoryAvailableBytes);
 
     // ---
 
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly string _nodeExporterUrl;
     private readonly ILogger<SystemMetricsService> _logger;
-    private readonly bool _isLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
-    private readonly string _platform = RuntimeInformation.OSDescription;
 
-    // CPU delta state
-    private TimeSpan _lastCpuTime = TimeSpan.Zero;
-    private DateTime _lastSampleTime = DateTime.MinValue;
+    // CPU delta state: cpu label → (mode → cumulative seconds)
+    private Dictionary<string, Dictionary<string, double>> _prevCpuSeconds = new();
 
     // Latest snapshot — written by background loop, read by HTTP handler
     private volatile SystemMetricsSnapshot? _snapshot;
 
-    public SystemMetricsService(ILogger<SystemMetricsService> logger)
+    public SystemMetricsService(
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration,
+        ILogger<SystemMetricsService> logger)
     {
+        _httpClientFactory = httpClientFactory;
+        _nodeExporterUrl = configuration[Constants.Config.NodeExporterUrl]
+            ?? "http://localhost:9100/metrics";
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Establish a CPU baseline before the first sample
-        var proc = System.Diagnostics.Process.GetCurrentProcess();
-        _lastCpuTime = proc.TotalProcessorTime;
-        _lastSampleTime = DateTime.UtcNow;
-
         _logger.LogInformation(
-            "SystemMetricsService started. Platform: {Platform}, IsLinux: {IsLinux}",
-            _platform, _isLinux);
+            "SystemMetricsService started. node_exporter URL: {Url}", _nodeExporterUrl);
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken).ConfigureAwait(false);
-
             try
             {
-                Sample();
+                await SampleAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -82,8 +72,10 @@ public sealed class SystemMetricsService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "System metrics sample failed; will retry next interval.");
+                _logger.LogWarning(ex, "node_exporter sample failed; will retry next interval.");
             }
+
+            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken).ConfigureAwait(false);
         }
 
         _logger.LogInformation("SystemMetricsService stopped.");
@@ -95,32 +87,28 @@ public sealed class SystemMetricsService : BackgroundService
         var s = _snapshot;
         if (s is null) return null;
 
-        long? usedBytes       = s.SystemMemoryTotalBytes > 0 && s.SystemMemoryAvailableBytes.HasValue
-            ? s.SystemMemoryTotalBytes - s.SystemMemoryAvailableBytes.Value
-            : null;
-        double? usagePct      = usedBytes.HasValue && s.SystemMemoryTotalBytes > 0
-            ? (double)usedBytes.Value / s.SystemMemoryTotalBytes * 100.0
-            : null;
+        long usedBytes = s.MemoryTotalBytes - s.MemoryAvailableBytes;
+        double usagePct = s.MemoryTotalBytes > 0
+            ? (double)usedBytes / s.MemoryTotalBytes * 100.0
+            : 0.0;
 
         return new SystemMetricsDto(
-            ProcessCpuPercent:          s.CpuPercent,
-            ProcessCpu:                 $"{s.CpuPercent:F1}%  ({Environment.ProcessorCount} logical cores)",
-            ProcessMemoryBytes:         s.ProcessMemoryBytes,
-            ProcessMemory:              FormatBytes(s.ProcessMemoryBytes),
-            SystemMemoryTotalBytes:     s.SystemMemoryTotalBytes,
-            SystemMemoryTotal:          s.SystemMemoryTotalBytes > 0 ? FormatBytes(s.SystemMemoryTotalBytes) : "N/A",
-            SystemMemoryAvailableBytes: s.SystemMemoryAvailableBytes,
-            SystemMemoryAvailable:      s.SystemMemoryAvailableBytes.HasValue ? FormatBytes(s.SystemMemoryAvailableBytes.Value) : null,
-            SystemMemoryUsedBytes:      usedBytes,
-            SystemMemoryUsed:           usedBytes.HasValue ? FormatBytes(usedBytes.Value) : null,
-            SystemMemoryUsage:          usagePct.HasValue ? $"{usagePct.Value:F1}% used" : null,
-            ProcessorCount:             Environment.ProcessorCount,
-            Platform:                   _platform,
-            Timestamp:                  s.Timestamp
+            CpuPercent:          s.CpuPercent,
+            Cpu:                 $"{s.CpuPercent:F1}%  ({s.CpuCoreCount} cores)",
+            CpuCoreCount:        s.CpuCoreCount,
+            MemoryTotalBytes:    s.MemoryTotalBytes,
+            MemoryTotal:         FormatBytes(s.MemoryTotalBytes),
+            MemoryAvailableBytes: s.MemoryAvailableBytes,
+            MemoryAvailable:     FormatBytes(s.MemoryAvailableBytes),
+            MemoryUsedBytes:     usedBytes,
+            MemoryUsed:          FormatBytes(usedBytes),
+            MemoryUsage:         $"{usagePct:F1}% used",
+            Source:              "node_exporter",
+            Timestamp:           s.Timestamp
         );
     }
 
-    private static string FormatBytes(long bytes)
+    internal static string FormatBytes(long bytes)
     {
         if (bytes >= 1_073_741_824L) return $"{bytes / 1_073_741_824.0:F1} GB";
         if (bytes >= 1_048_576L)     return $"{bytes / 1_048_576.0:F1} MB";
@@ -130,95 +118,175 @@ public sealed class SystemMetricsService : BackgroundService
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private void Sample()
+    private async Task SampleAsync(CancellationToken ct)
     {
-        var proc = System.Diagnostics.Process.GetCurrentProcess();
-        proc.Refresh();
+        var client = _httpClientFactory.CreateClient();
+        var response = await client.GetStringAsync(_nodeExporterUrl, ct);
+
+        var parsed = ParseNodeExporterMetrics(response);
 
         // --- CPU ---
-        var now     = DateTime.UtcNow;
-        var cpuUsed = proc.TotalProcessorTime - _lastCpuTime;
-        var elapsed = now - _lastSampleTime;
+        double cpuPercent = ComputeCpuPercent(parsed.CpuSeconds);
+        _prevCpuSeconds = parsed.CpuSeconds;
+        int coreCount = parsed.CpuSeconds.Count;
 
-        var cpuPercent = elapsed.TotalMilliseconds > 0
-            ? cpuUsed.TotalMilliseconds / (elapsed.TotalMilliseconds * Environment.ProcessorCount) * 100.0
-            : 0.0;
-
-        _lastCpuTime    = proc.TotalProcessorTime;
-        _lastSampleTime = now;
-
-        // --- Process memory ---
-        long processRss = proc.WorkingSet64;
-
-        // --- System memory ---
-        long sysTotal     = 0;
-        long? sysAvailable = null;
-
-        if (_isLinux)
-        {
-            (sysTotal, sysAvailable) = ReadProcMeminfo();
-        }
-        else
-        {
-            // GCMemoryInfo.TotalAvailableMemoryBytes is the installed physical RAM
-            // (or the container memory limit if running in one).
-            var gcInfo = GC.GetGCMemoryInfo();
-            sysTotal = gcInfo.TotalAvailableMemoryBytes;
-            // Available RAM on Windows requires P/Invoke (GlobalMemoryStatusEx).
-            // We skip that dependency; the field will be null/absent in the response.
-        }
+        // --- Memory ---
+        long memTotal = parsed.MemoryTotalBytes;
+        long memAvailable = parsed.MemoryAvailableBytes;
 
         // --- Update Prometheus ---
-        ProcessCpuPercent.Set(cpuPercent);
-        ProcessMemoryBytes.Set(processRss);
-        if (sysTotal > 0)     SystemMemoryTotalBytes.Set(sysTotal);
-        if (sysAvailable > 0) SystemMemoryAvailableBytes.Set(sysAvailable.Value);
+        DbHostCpuPercent.Set(cpuPercent);
+        if (memTotal > 0)     DbHostMemoryTotalBytes.Set(memTotal);
+        if (memAvailable > 0) DbHostMemoryAvailableBytes.Set(memAvailable);
 
-        _snapshot = new SystemMetricsSnapshot(cpuPercent, processRss, sysTotal, sysAvailable, now);
+        _snapshot = new SystemMetricsSnapshot(cpuPercent, coreCount, memTotal, memAvailable, DateTimeOffset.UtcNow);
 
         _logger.LogDebug(
-            "System sample — cpu={Cpu:F1}%, rss={Rss}B, sys_total={Total}B",
-            cpuPercent, processRss, sysTotal);
+            "node_exporter sample — cpu={Cpu:F1}%, cores={Cores}, mem_total={Total}B, mem_avail={Avail}B",
+            cpuPercent, coreCount, memTotal, memAvailable);
     }
 
-    /// <summary>Reads MemTotal and MemAvailable from /proc/meminfo (Linux only).</summary>
-    private static (long total, long available) ReadProcMeminfo()
+    /// <summary>
+    /// Computes overall CPU usage % from the delta between previous and current
+    /// node_cpu_seconds_total counters.
+    /// Returns 0 on the first sample (no previous data to delta against).
+    /// </summary>
+    private double ComputeCpuPercent(Dictionary<string, Dictionary<string, double>> current)
     {
-        long total = 0, available = 0;
+        if (_prevCpuSeconds.Count == 0)
+            return 0.0;
 
-        foreach (var line in File.ReadLines("/proc/meminfo"))
+        double totalDelta = 0;
+        double idleDelta = 0;
+
+        foreach (var (cpu, modes) in current)
         {
-            if (line.StartsWith("MemTotal:", StringComparison.Ordinal))
-                total = ParseProcMeminfoKb(line) * 1024;
-            else if (line.StartsWith("MemAvailable:", StringComparison.Ordinal))
-                available = ParseProcMeminfoKb(line) * 1024;
+            if (!_prevCpuSeconds.TryGetValue(cpu, out var prevModes))
+                continue;
 
-            if (total > 0 && available > 0) break;
+            foreach (var (mode, value) in modes)
+            {
+                double prev = prevModes.GetValueOrDefault(mode, 0);
+                double delta = value - prev;
+                totalDelta += delta;
+                if (mode == "idle")
+                    idleDelta += delta;
+            }
         }
 
-        return (total, available);
+        if (totalDelta <= 0) return 0.0;
+
+        return (1.0 - idleDelta / totalDelta) * 100.0;
     }
 
-    // Parses lines like "MemTotal:       16386052 kB" → 16386052
-    private static long ParseProcMeminfoKb(string line)
+    // ── Prometheus text format parser (lightweight, no library needed) ─────
+
+    internal static NodeExporterData ParseNodeExporterMetrics(string metricsText)
     {
-        var span = line.AsSpan();
-        var colon = span.IndexOf(':');
-        if (colon < 0) return 0;
+        // cpu label → (mode → cumulative seconds)
+        var cpuSeconds = new Dictionary<string, Dictionary<string, double>>();
+        long memTotal = 0;
+        long memAvailable = 0;
 
-        span = span[(colon + 1)..].Trim();
-        var space = span.IndexOf(' ');
-        var digits = space >= 0 ? span[..space] : span;
+        foreach (var line in metricsText.AsSpan().EnumerateLines())
+        {
+            if (line.StartsWith("#") || line.IsWhiteSpace())
+                continue;
 
-        return long.TryParse(digits, out var val) ? val : 0;
+            if (line.StartsWith("node_cpu_seconds_total{"))
+            {
+                ParseCpuLine(line, cpuSeconds);
+            }
+            else if (line.StartsWith("node_memory_MemTotal_bytes "))
+            {
+                memTotal = ParseGaugeValueAsLong(line);
+            }
+            else if (line.StartsWith("node_memory_MemAvailable_bytes "))
+            {
+                memAvailable = ParseGaugeValueAsLong(line);
+            }
+        }
+
+        return new NodeExporterData(cpuSeconds, memTotal, memAvailable);
+    }
+
+    /// <summary>
+    /// Parses a line like:
+    ///   node_cpu_seconds_total{cpu="0",mode="idle"} 5000.0
+    /// </summary>
+    private static void ParseCpuLine(ReadOnlySpan<char> line, Dictionary<string, Dictionary<string, double>> cpuSeconds)
+    {
+        // Extract labels between { and }
+        int braceOpen = line.IndexOf('{');
+        int braceClose = line.IndexOf('}');
+        if (braceOpen < 0 || braceClose < 0) return;
+
+        var labels = line[(braceOpen + 1)..braceClose];
+        string? cpu = ExtractLabel(labels, "cpu");
+        string? mode = ExtractLabel(labels, "mode");
+        if (cpu is null || mode is null) return;
+
+        // Parse the value after the closing brace + space
+        var valuePart = line[(braceClose + 1)..].Trim();
+        if (!double.TryParse(valuePart, NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+            return;
+
+        if (!cpuSeconds.TryGetValue(cpu, out var modes))
+        {
+            modes = new Dictionary<string, double>();
+            cpuSeconds[cpu] = modes;
+        }
+        modes[mode] = value;
+    }
+
+    /// <summary>
+    /// Extracts a label value from a Prometheus label set.
+    /// e.g. ExtractLabel("cpu=\"0\",mode=\"idle\"", "mode") → "idle"
+    /// </summary>
+    private static string? ExtractLabel(ReadOnlySpan<char> labels, string key)
+    {
+        var searchKey = $"{key}=\"";
+        int start = labels.IndexOf(searchKey.AsSpan());
+        if (start < 0) return null;
+
+        start += searchKey.Length;
+        var rest = labels[start..];
+        int end = rest.IndexOf('"');
+        if (end < 0) return null;
+
+        return rest[..end].ToString();
+    }
+
+    /// <summary>
+    /// Parses a gauge line like:
+    ///   node_memory_MemTotal_bytes 1.7179869184e+10
+    /// Returns the value as a long (bytes).
+    /// </summary>
+    private static long ParseGaugeValueAsLong(ReadOnlySpan<char> line)
+    {
+        int space = line.LastIndexOf(' ');
+        if (space < 0) return 0;
+
+        var valuePart = line[(space + 1)..].Trim();
+        if (!double.TryParse(valuePart, NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+            return 0;
+
+        return (long)value;
     }
 }
 
 /// <summary>Internal snapshot — avoids re-boxing the volatile field on every read.</summary>
 internal sealed record SystemMetricsSnapshot(
     double CpuPercent,
-    long   ProcessMemoryBytes,
-    long   SystemMemoryTotalBytes,
-    long?  SystemMemoryAvailableBytes,
-    DateTime Timestamp
+    int    CpuCoreCount,
+    long   MemoryTotalBytes,
+    long   MemoryAvailableBytes,
+    DateTimeOffset Timestamp
+);
+
+/// <summary>Parsed result from a single node_exporter /metrics scrape.</summary>
+internal sealed record NodeExporterData(
+    Dictionary<string, Dictionary<string, double>> CpuSeconds,
+    long MemoryTotalBytes,
+    long MemoryAvailableBytes
 );

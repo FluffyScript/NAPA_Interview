@@ -132,7 +132,7 @@
       }
     },
     {
-      "title": "Process CPU %",
+      "title": "DB Host CPU %",
       "type": "stat",
       "gridPos": { "h": 5, "w": 4, "x": 16, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
@@ -151,7 +151,7 @@
       },
       "targets": [
         {
-          "expr": "process_cpu_usage_percent",
+          "expr": "dbhost_cpu_usage_percent",
           "legendFormat": "",
           "refId": "A"
         }
@@ -163,7 +163,7 @@
       }
     },
     {
-      "title": "Process Memory",
+      "title": "DB Host Memory Used",
       "type": "stat",
       "gridPos": { "h": 5, "w": 4, "x": 20, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
@@ -182,7 +182,7 @@
       },
       "targets": [
         {
-          "expr": "process_memory_bytes",
+          "expr": "dbhost_memory_total_bytes - dbhost_memory_available_bytes",
           "legendFormat": "",
           "refId": "A"
         }
@@ -237,7 +237,7 @@
       }
     },
     {
-      "title": "Process CPU & Memory",
+      "title": "DB Host CPU & Memory",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
@@ -268,13 +268,13 @@
       },
       "targets": [
         {
-          "expr": "process_cpu_usage_percent",
+          "expr": "dbhost_cpu_usage_percent",
           "legendFormat": "CPU %",
           "refId": "A"
         },
         {
-          "expr": "process_memory_bytes",
-          "legendFormat": "Memory",
+          "expr": "dbhost_memory_total_bytes - dbhost_memory_available_bytes",
+          "legendFormat": "Memory Used",
           "refId": "B"
         }
       ],
@@ -409,7 +409,7 @@
     },
 
     {
-      "title": "System Memory",
+      "title": "DB Host Memory",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 29 },
       "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
@@ -425,17 +425,17 @@
       },
       "targets": [
         {
-          "expr": "system_memory_total_bytes",
+          "expr": "dbhost_memory_total_bytes",
           "legendFormat": "Total",
           "refId": "A"
         },
         {
-          "expr": "system_memory_available_bytes",
+          "expr": "dbhost_memory_available_bytes",
           "legendFormat": "Available",
           "refId": "B"
         },
         {
-          "expr": "system_memory_total_bytes - system_memory_available_bytes",
+          "expr": "dbhost_memory_total_bytes - dbhost_memory_available_bytes",
           "legendFormat": "Used",
           "refId": "C"
         }

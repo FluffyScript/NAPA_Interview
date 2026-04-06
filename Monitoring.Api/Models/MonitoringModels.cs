@@ -31,27 +31,23 @@ public record DeadTuplesDto(
 );
 
 public record SystemMetricsDto(
-    // ── CPU ──────────────────────────────────────────────────────────────────
-    double ProcessCpuPercent,
-    string ProcessCpu,               // e.g. "12.3%  (8 logical cores)"
+    // ── DB Host CPU ─────────────────────────────────────────────────────────
+    double CpuPercent,
+    string Cpu,                      // e.g. "23.4%  (4 cores)"
+    int    CpuCoreCount,
 
-    // ── Process memory ────────────────────────────────────────────────────────
-    long   ProcessMemoryBytes,
-    string ProcessMemory,            // e.g. "128.4 MB"
+    // ── DB Host Memory ──────────────────────────────────────────────────────
+    long   MemoryTotalBytes,
+    string MemoryTotal,              // e.g. "15.9 GB"
 
-    // ── System memory ─────────────────────────────────────────────────────────
-    long   SystemMemoryTotalBytes,
-    string SystemMemoryTotal,        // e.g. "15.9 GB"
+    long   MemoryAvailableBytes,
+    string MemoryAvailable,          // e.g. "8.2 GB"
 
-    long?  SystemMemoryAvailableBytes,
-    string? SystemMemoryAvailable,   // e.g. "8.2 GB"   — Linux only, null on Windows
-
-    long?  SystemMemoryUsedBytes,
-    string? SystemMemoryUsed,        // e.g. "7.7 GB"   — Linux only, null on Windows
-    string? SystemMemoryUsage,       // e.g. "48.4% used" — Linux only, null on Windows
+    long   MemoryUsedBytes,
+    string MemoryUsed,               // e.g. "7.7 GB"
+    string MemoryUsage,              // e.g. "48.4% used"
 
     // ── Meta ─────────────────────────────────────────────────────────────────
-    int    ProcessorCount,
-    string Platform,
+    string Source,                    // "node_exporter"
     DateTimeOffset Timestamp
 );

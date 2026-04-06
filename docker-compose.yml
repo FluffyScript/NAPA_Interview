@@ -11,6 +11,8 @@ services:
       # Host=postgres resolves to the postgres service inside the Docker network.
       # $$ is Docker Compose escape for a literal $ in the password.
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=NAPA_Interview;Username=interview_user;Password=ihnte$$*(&)%Yhjn9y53"
+      # node_exporter shares postgres's network namespace, so it's reachable at postgres:9100.
+      Monitoring__NodeExporterUrl: "http://postgres:9100/metrics"
     depends_on:
       postgres:
         condition: service_healthy
@@ -48,11 +50,33 @@ services:
       - prometheus
     restart: unless-stopped
 
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    # Share the postgres container's PID and network namespace so node_exporter
+    # reports CPU/memory for the database container, not a separate one.
+    pid: "service:postgres"
+    network_mode: "service:postgres"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   postgres:
     image: postgres:17
     container_name: postgres
     ports:
       - "5432:5432"
+      - "9100:9100"
     environment:
       POSTGRES_DB: NAPA_Interview
       POSTGRES_USER: interview_user

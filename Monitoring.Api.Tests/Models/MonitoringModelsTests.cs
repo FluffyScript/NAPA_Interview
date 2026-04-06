@@ -107,63 +107,41 @@ public sealed class MonitoringModelsTests
     {
         var ts = DateTimeOffset.UtcNow;
         var dto = new SystemMetricsDto(
-            ProcessCpuPercent: 12.3,
-            ProcessCpu: "12.3%  (8 logical cores)",
-            ProcessMemoryBytes: 134_217_728,
-            ProcessMemory: "128.0 MB",
-            SystemMemoryTotalBytes: 17_179_869_184,
-            SystemMemoryTotal: "16.0 GB",
-            SystemMemoryAvailableBytes: 8_589_934_592,
-            SystemMemoryAvailable: "8.0 GB",
-            SystemMemoryUsedBytes: 8_589_934_592,
-            SystemMemoryUsed: "8.0 GB",
-            SystemMemoryUsage: "50.0% used",
-            ProcessorCount: 8,
-            Platform: "Windows 10",
+            CpuPercent: 23.4,
+            Cpu: "23.4%  (4 cores)",
+            CpuCoreCount: 4,
+            MemoryTotalBytes: 17_179_869_184,
+            MemoryTotal: "16.0 GB",
+            MemoryAvailableBytes: 8_589_934_592,
+            MemoryAvailable: "8.0 GB",
+            MemoryUsedBytes: 8_589_934_592,
+            MemoryUsed: "8.0 GB",
+            MemoryUsage: "50.0% used",
+            Source: "node_exporter",
             Timestamp: ts
         );
 
-        Assert.Equal(12.3, dto.ProcessCpuPercent);
-        Assert.Equal("12.3%  (8 logical cores)", dto.ProcessCpu);
-        Assert.Equal(134_217_728, dto.ProcessMemoryBytes);
-        Assert.Equal("128.0 MB", dto.ProcessMemory);
-        Assert.Equal(17_179_869_184, dto.SystemMemoryTotalBytes);
-        Assert.Equal("16.0 GB", dto.SystemMemoryTotal);
-        Assert.Equal(8_589_934_592, dto.SystemMemoryAvailableBytes);
-        Assert.Equal("8.0 GB", dto.SystemMemoryAvailable);
-        Assert.Equal(8_589_934_592, dto.SystemMemoryUsedBytes);
-        Assert.Equal("8.0 GB", dto.SystemMemoryUsed);
-        Assert.Equal("50.0% used", dto.SystemMemoryUsage);
-        Assert.Equal(8, dto.ProcessorCount);
-        Assert.Equal("Windows 10", dto.Platform);
+        Assert.Equal(23.4, dto.CpuPercent);
+        Assert.Equal("23.4%  (4 cores)", dto.Cpu);
+        Assert.Equal(4, dto.CpuCoreCount);
+        Assert.Equal(17_179_869_184, dto.MemoryTotalBytes);
+        Assert.Equal("16.0 GB", dto.MemoryTotal);
+        Assert.Equal(8_589_934_592, dto.MemoryAvailableBytes);
+        Assert.Equal("8.0 GB", dto.MemoryAvailable);
+        Assert.Equal(8_589_934_592, dto.MemoryUsedBytes);
+        Assert.Equal("8.0 GB", dto.MemoryUsed);
+        Assert.Equal("50.0% used", dto.MemoryUsage);
+        Assert.Equal("node_exporter", dto.Source);
         Assert.Equal(ts, dto.Timestamp);
     }
 
     [Fact]
-    public void SystemMetricsDto_NullableFields_CanBeNull()
+    public void SystemMetricsDto_ValueEquality()
     {
         var ts = DateTimeOffset.UtcNow;
-        var dto = new SystemMetricsDto(
-            ProcessCpuPercent: 0,
-            ProcessCpu: "0.0%",
-            ProcessMemoryBytes: 0,
-            ProcessMemory: "0 B",
-            SystemMemoryTotalBytes: 0,
-            SystemMemoryTotal: "N/A",
-            SystemMemoryAvailableBytes: null,
-            SystemMemoryAvailable: null,
-            SystemMemoryUsedBytes: null,
-            SystemMemoryUsed: null,
-            SystemMemoryUsage: null,
-            ProcessorCount: 1,
-            Platform: "test",
-            Timestamp: ts
-        );
+        var a = new SystemMetricsDto(10.0, "10.0%  (2 cores)", 2, 1000, "1000 B", 500, "500 B", 500, "500 B", "50.0% used", "node_exporter", ts);
+        var b = new SystemMetricsDto(10.0, "10.0%  (2 cores)", 2, 1000, "1000 B", 500, "500 B", 500, "500 B", "50.0% used", "node_exporter", ts);
 
-        Assert.Null(dto.SystemMemoryAvailableBytes);
-        Assert.Null(dto.SystemMemoryAvailable);
-        Assert.Null(dto.SystemMemoryUsedBytes);
-        Assert.Null(dto.SystemMemoryUsed);
-        Assert.Null(dto.SystemMemoryUsage);
+        Assert.Equal(a, b);
     }
 }
