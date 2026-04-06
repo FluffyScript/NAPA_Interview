@@ -1,4 +1,4 @@
-# Monitoring API — POC
+# Monitoring API
 
 A .NET 10 Minimal API that monitors a PostgreSQL database and exposes metrics for Prometheus to scrape. Built as a proof of concept for a NAPA interview.
 
@@ -25,7 +25,7 @@ A .NET 10 Minimal API that monitors a PostgreSQL database and exposes metrics fo
 **Separation of concerns:**
 - `/api/monitoring/...` → structured JSON for the frontend
 - `/metrics` → Prometheus scrape endpoint only, never for the frontend
-- PostgreSQL stats are queried directly via `pg_stat_activity`, `pg_stat_statements`, `pg_stat_user_tables`
+- PostgreSQL stats are queried via EF Core keyless entities mapped to `pg_stat_activity`, `pg_stat_statements`, and `pg_stat_user_tables`
 
 ---
 
@@ -34,16 +34,13 @@ A .NET 10 Minimal API that monitors a PostgreSQL database and exposes metrics fo
 | Concern | Choice |
 |---|---|
 | Framework | ASP.NET Core Minimal API (.NET 10) |
+| ORM | Entity Framework Core 9 (`Npgsql.EntityFrameworkCore.PostgreSQL`) |
+| Column naming | `EFCore.NamingConventions` — snake_case |
 | Prometheus metrics | `prometheus-net.AspNetCore` + `prometheus-net.DotNetRuntime` |
 | OpenAPI spec | `Microsoft.AspNetCore.OpenApi` (built-in .NET 10) |
 | Swagger UI | `Swashbuckle.AspNetCore.SwaggerUI` at `/swagger` |
-| PostgreSQL access | `Npgsql` + `Dapper` (raw SQL against `pg_stat_*` views) |
 | Error responses | RFC 7807 Problem Details (`AddProblemDetails`) |
 | Containerisation | Docker + Docker Compose |
-
-# Monitoring API
-
-.NET 10 Minimal API that monitors a PostgreSQL database and exposes health metrics as JSON endpoints and a Prometheus scrape endpoint.
 
 ---
 
@@ -151,4 +148,3 @@ docker compose -f docker-compose.db-only.yml up -d
 ```
 
 Then run the API via Visual Studio or the .NET CLI as described above.
-"# NAPA_Interview" 
