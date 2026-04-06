@@ -64,6 +64,7 @@ grafana/
   provisioning/datasources/prometheus.yml — auto-configures Prometheus data source
   provisioning/dashboards/default.yml     — tells Grafana where to find JSON dashboards
   dashboards/monitoring-api.json          — pre-built Monitoring API dashboard
+aws/cloudformation.yml                    — CloudFormation template for EC2 deployment
 docker-compose.yml
 docker-compose.db-only.yml
 Monitoring.Api.Tests/                      — xUnit test project

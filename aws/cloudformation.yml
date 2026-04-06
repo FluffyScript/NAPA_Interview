@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Monitoring API — deploys the full stack (API, PostgreSQL, Prometheus, Grafana)
+  on a single EC2 instance using Docker Compose.
+
+# ─── Parameters ─────────────────────────────────────────────────────────────────
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: monitoring-api
+    Description: Name prefix for all resources.
+
+  InstanceType:
+    Type: String
+    Default: t3.small
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+    Description: EC2 instance type. t3.small recommended (2 vCPU, 2 GB RAM).
+
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Existing EC2 key pair for SSH access.
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC to deploy into (use default VPC or an existing one).
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet for the EC2 instance.
+
+  AllowedSshCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: >
+      CIDR block allowed to SSH into the instance.
+      Restrict to your IP (e.g. 203.0.113.10/32) for production use.
+
+  GitRepoUrl:
+    Type: String
+    Default: https://github.com/your-org/NAPA_Interview.git
+    Description: Git repository URL to clone on the instance.
+
+  GitBranch:
+    Type: String
+    Default: main
+    Description: Branch to checkout after cloning.
+
+# ─── Resources ──────────────────────────────────────────────────────────────────
+
+Resources:
+
+  # ── Security Group ──────────────────────────────────────────────────────────
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${EnvironmentName} — allow HTTP, Grafana, Prometheus, SSH"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # SSH
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedSshCidr
+          Description: SSH access
+
+        # Monitoring API (Swagger UI, JSON endpoints, Prometheus scrape)
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+          Description: Monitoring API
+
+        # Grafana
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+          Description: Grafana dashboard
+
+        # Prometheus
+        - IpProtocol: tcp
+          FromPort: 9090
+          ToPort: 9090
+          CidrIp: 0.0.0.0/0
+          Description: Prometheus UI
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-sg"
+
+  # ── IAM Role (allows SSM Session Manager as an SSH alternative) ─────────────
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentName}-ec2-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-role"
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  # ── EC2 Instance ────────────────────────────────────────────────────────────
+
+  MonitoringInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyPairName
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      IamInstanceProfile: !Ref InstanceProfile
+      # Amazon Linux 2023 — latest AMI via SSM parameter
+      ImageId: !Sub "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 30
+            VolumeType: gp3
+            DeleteOnTermination: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-instance"
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+
+          # ── Log everything to /var/log/user-data.log ──
+          exec > >(tee /var/log/user-data.log) 2>&1
+          echo ">>> UserData started at $(date)"
+
+          # ── Install Docker ──
+          dnf update -y
+          dnf install -y docker git
+          systemctl enable docker
+          systemctl start docker
+
+          # Add ec2-user to docker group so SSH sessions can run docker
+          usermod -aG docker ec2-user
+
+          # ── Install Docker Compose plugin ──
+          mkdir -p /usr/local/lib/docker/cli-plugins
+          curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
+               -o /usr/local/lib/docker/cli-plugins/docker-compose
+          chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+          # ── Clone the repository ──
+          cd /home/ec2-user
+          git clone --branch ${GitBranch} ${GitRepoUrl} app
+          chown -R ec2-user:ec2-user app
+
+          # ── Start the full stack ──
+          cd /home/ec2-user/app
+          docker compose up --build -d
+
+          echo ">>> UserData finished at $(date)"
+
+# ─── Outputs ────────────────────────────────────────────────────────────────────
+
+Outputs:
+  InstanceId:
+    Description: EC2 instance ID
+    Value: !Ref MonitoringInstance
+
+  PublicIp:
+    Description: Public IP of the EC2 instance
+    Value: !GetAtt MonitoringInstance.PublicIp
+
+  SwaggerUrl:
+    Description: Swagger UI
+    Value: !Sub "http://${MonitoringInstance.PublicIp}:8080/swagger"
+
+  ApiOverviewUrl:
+    Description: API health snapshot
+    Value: !Sub "http://${MonitoringInstance.PublicIp}:8080/api/monitoring/overview"
+
+  PrometheusUrl:
+    Description: Prometheus UI
+    Value: !Sub "http://${MonitoringInstance.PublicIp}:9090"
+
+  GrafanaUrl:
+    Description: Grafana dashboard (admin / admin)
+    Value: !Sub "http://${MonitoringInstance.PublicIp}:3000"
+
+  SshCommand:
+    Description: SSH into the instance
+    Value: !Sub "ssh -i <your-key>.pem ec2-user@${MonitoringInstance.PublicIp}"

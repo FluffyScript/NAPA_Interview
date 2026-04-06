@@ -139,6 +139,66 @@ Open Grafana at `http://localhost:3000`, log in with **admin / admin**, and the 
 
 ---
 
+## Option 4 — AWS CloudFormation (EC2)
+
+Deploys the full stack on a single EC2 instance using Docker Compose. The CloudFormation template lives in `aws/cloudformation.yml`.
+
+### Prerequisites
+
+- An AWS account with an existing VPC, public subnet, and EC2 key pair
+- AWS CLI configured (`aws configure`)
+
+### Deploy
+
+```bash
+aws cloudformation create-stack \
+  --stack-name monitoring-api \
+  --template-body file://aws/cloudformation.yml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameters \
+    ParameterKey=KeyPairName,ParameterValue=<your-key-pair> \
+    ParameterKey=VpcId,ParameterValue=<vpc-id> \
+    ParameterKey=SubnetId,ParameterValue=<subnet-id> \
+    ParameterKey=GitRepoUrl,ParameterValue=https://github.com/your-org/NAPA_Interview.git \
+    ParameterKey=GitBranch,ParameterValue=main
+```
+
+### What it creates
+
+| Resource | Purpose |
+|---|---|
+| EC2 instance (Amazon Linux 2023) | Runs Docker Compose with the full stack |
+| Security group | Opens ports 8080 (API), 3000 (Grafana), 9090 (Prometheus), 22 (SSH) |
+| IAM role + instance profile | Enables SSM Session Manager as an SSH alternative |
+| 30 GB gp3 EBS volume | Storage for Docker images, PostgreSQL data, Prometheus TSDB |
+
+### After deployment
+
+Once the stack reaches `CREATE_COMPLETE`, get the URLs from the stack outputs:
+
+```bash
+aws cloudformation describe-stacks --stack-name monitoring-api \
+  --query "Stacks[0].Outputs" --output table
+```
+
+| Output | Example |
+|---|---|
+| SwaggerUrl | `http://<public-ip>:8080/swagger` |
+| ApiOverviewUrl | `http://<public-ip>:8080/api/monitoring/overview` |
+| GrafanaUrl | `http://<public-ip>:3000` (admin / admin) |
+| PrometheusUrl | `http://<public-ip>:9090` |
+| SshCommand | `ssh -i <key>.pem ec2-user@<public-ip>` |
+
+> **Note:** The UserData script installs Docker, clones the repo, and runs `docker compose up`. Allow 2-3 minutes after stack creation for the services to become available. You can check progress with `ssh` and `tail -f /var/log/user-data.log`.
+
+### Tear down
+
+```bash
+aws cloudformation delete-stack --stack-name monitoring-api
+```
+
+---
+
 ## Database-only Docker (for local .NET development)
 
 If you want to run the API locally (Visual Studio or CLI) but still use Docker for PostgreSQL:
