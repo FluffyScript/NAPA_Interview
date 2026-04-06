@@ -151,7 +151,7 @@
       },
       "targets": [
         {
-          "expr": "dbhost_cpu_usage_percent",
+          "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * 100)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -182,7 +182,7 @@
       },
       "targets": [
         {
-          "expr": "dbhost_memory_total_bytes - dbhost_memory_available_bytes",
+          "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes",
           "legendFormat": "",
           "refId": "A"
         }
@@ -268,12 +268,12 @@
       },
       "targets": [
         {
-          "expr": "dbhost_cpu_usage_percent",
+          "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * 100)",
           "legendFormat": "CPU %",
           "refId": "A"
         },
         {
-          "expr": "dbhost_memory_total_bytes - dbhost_memory_available_bytes",
+          "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes",
           "legendFormat": "Memory Used",
           "refId": "B"
         }
@@ -425,17 +425,17 @@
       },
       "targets": [
         {
-          "expr": "dbhost_memory_total_bytes",
+          "expr": "node_memory_MemTotal_bytes",
           "legendFormat": "Total",
           "refId": "A"
         },
         {
-          "expr": "dbhost_memory_available_bytes",
+          "expr": "node_memory_MemAvailable_bytes",
           "legendFormat": "Available",
           "refId": "B"
         },
         {
-          "expr": "dbhost_memory_total_bytes - dbhost_memory_available_bytes",
+          "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes",
           "legendFormat": "Used",
           "refId": "C"
         }
