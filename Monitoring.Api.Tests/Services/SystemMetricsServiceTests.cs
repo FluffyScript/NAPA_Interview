@@ -174,6 +174,13 @@ public sealed class SystemMetricsServiceTests
         Assert.True(true);
     }
 
+    [Fact]
+    public void CpuWindowSize_Is12_MatchingGrafana1MinuteRate()
+    {
+        // 12 samples × 5s interval = 60s window, matching Grafana's rate(...[1m])
+        Assert.Equal(12, SystemMetricsService.CpuWindowSize);
+    }
+
     // ── Parser unit tests (no HTTP needed) ───────────────────────────────────
 
     [Fact]

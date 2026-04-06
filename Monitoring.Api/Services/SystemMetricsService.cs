@@ -8,7 +8,9 @@ namespace Monitoring.Api.Services;
 /// Singleton background service that polls a node_exporter instance every 5 seconds
 /// to collect CPU and memory metrics for the database host.
 ///
-/// CPU:    Computed from delta of node_cpu_seconds_total counters across all cores.
+/// CPU:    Computed from delta of node_cpu_seconds_total counters over a 1-minute
+///         sliding window (12 samples at 5 s each). This matches Grafana's
+///         rate(node_cpu_seconds_total[1m]) so both surfaces show the same number.
 ///         Usage% = (1 − idle_delta / total_delta) × 100.
 ///
 /// Memory: node_memory_MemTotal_bytes and node_memory_MemAvailable_bytes.
@@ -34,12 +36,20 @@ public sealed class SystemMetricsService : BackgroundService
 
     // ---
 
+    /// <summary>
+    /// The CPU sliding window holds this many samples. At a 5-second poll interval
+    /// 12 samples ≈ 60 seconds, matching Grafana's <c>rate(...[1m])</c>.
+    /// </summary>
+    internal const int CpuWindowSize = 12;
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly string _nodeExporterUrl;
     private readonly ILogger<SystemMetricsService> _logger;
 
-    // CPU delta state: cpu label → (mode → cumulative seconds)
-    private Dictionary<string, Dictionary<string, double>> _prevCpuSeconds = new();
+    // Sliding window of CPU counter snapshots — oldest at the front, newest at the back.
+    // CPU % is always computed as the delta between the oldest and newest entries,
+    // giving a ~60-second rolling average that aligns with Grafana.
+    private readonly Queue<Dictionary<string, Dictionary<string, double>>> _cpuWindow = new();
 
     // Latest snapshot — written by background loop, read by HTTP handler
     private volatile SystemMetricsSnapshot? _snapshot;
@@ -125,9 +135,12 @@ public sealed class SystemMetricsService : BackgroundService
 
         var parsed = ParseNodeExporterMetrics(response);
 
-        // --- CPU ---
-        double cpuPercent = ComputeCpuPercent(parsed.CpuSeconds);
-        _prevCpuSeconds = parsed.CpuSeconds;
+        // --- CPU (sliding window) ---
+        _cpuWindow.Enqueue(parsed.CpuSeconds);
+        while (_cpuWindow.Count > CpuWindowSize)
+            _cpuWindow.Dequeue();
+
+        double cpuPercent = ComputeCpuPercent();
         int coreCount = parsed.CpuSeconds.Count;
 
         // --- Memory ---
@@ -147,26 +160,30 @@ public sealed class SystemMetricsService : BackgroundService
     }
 
     /// <summary>
-    /// Computes overall CPU usage % from the delta between previous and current
-    /// node_cpu_seconds_total counters.
-    /// Returns 0 on the first sample (no previous data to delta against).
+    /// Computes overall CPU usage % from the delta between the oldest and newest
+    /// entries in the sliding window (up to ~60 seconds apart).
+    /// This matches Grafana's <c>rate(node_cpu_seconds_total{mode="idle"}[1m])</c>.
+    /// Returns 0 when the window contains fewer than 2 samples.
     /// </summary>
-    private double ComputeCpuPercent(Dictionary<string, Dictionary<string, double>> current)
+    private double ComputeCpuPercent()
     {
-        if (_prevCpuSeconds.Count == 0)
+        if (_cpuWindow.Count < 2)
             return 0.0;
+
+        var oldest = _cpuWindow.Peek();
+        var newest = _cpuWindow.Last();
 
         double totalDelta = 0;
         double idleDelta = 0;
 
-        foreach (var (cpu, modes) in current)
+        foreach (var (cpu, modes) in newest)
         {
-            if (!_prevCpuSeconds.TryGetValue(cpu, out var prevModes))
+            if (!oldest.TryGetValue(cpu, out var oldModes))
                 continue;
 
             foreach (var (mode, value) in modes)
             {
-                double prev = prevModes.GetValueOrDefault(mode, 0);
+                double prev = oldModes.GetValueOrDefault(mode, 0);
                 double delta = value - prev;
                 totalDelta += delta;
                 if (mode == "idle")
