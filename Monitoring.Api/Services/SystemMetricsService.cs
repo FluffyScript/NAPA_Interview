@@ -46,10 +46,10 @@ public sealed class SystemMetricsService : BackgroundService
     private readonly string _nodeExporterUrl;
     private readonly ILogger<SystemMetricsService> _logger;
 
-    // Sliding window of CPU counter snapshots — oldest at the front, newest at the back.
-    // CPU % is always computed as the delta between the oldest and newest entries,
-    // giving a ~60-second rolling average that aligns with Grafana.
-    private readonly Queue<Dictionary<string, Dictionary<string, double>>> _cpuWindow = new();
+    // Sliding window of timestamped CPU counter snapshots — oldest at the front, newest at the back.
+    // CPU % is computed as (1 − avg idle_delta/elapsed) × 100 across all cores,
+    // matching Prometheus's rate(node_cpu_seconds_total{mode="idle"}[1m]).
+    private readonly Queue<CpuSample> _cpuWindow = new();
 
     // Latest snapshot — written by background loop, read by HTTP handler
     private volatile SystemMetricsSnapshot? _snapshot;
@@ -136,7 +136,7 @@ public sealed class SystemMetricsService : BackgroundService
         var parsed = ParseNodeExporterMetrics(response);
 
         // --- CPU (sliding window) ---
-        _cpuWindow.Enqueue(parsed.CpuSeconds);
+        _cpuWindow.Enqueue(new CpuSample(DateTimeOffset.UtcNow, parsed.CpuSeconds));
         while (_cpuWindow.Count > CpuWindowSize)
             _cpuWindow.Dequeue();
 
@@ -160,9 +160,13 @@ public sealed class SystemMetricsService : BackgroundService
     }
 
     /// <summary>
-    /// Computes overall CPU usage % from the delta between the oldest and newest
-    /// entries in the sliding window (up to ~60 seconds apart).
-    /// This matches Grafana's <c>rate(node_cpu_seconds_total{mode="idle"}[1m])</c>.
+    /// Computes overall CPU usage % using the same formula as Prometheus + Grafana:
+    /// <c>100 − avg(rate(node_cpu_seconds_total{mode="idle"}[1m])) × 100</c>.
+    ///
+    /// For each core: <c>idle_rate = idle_delta / elapsed_seconds</c> (seconds of idle
+    /// per wall-clock second — exactly what Prometheus <c>rate()</c> returns).
+    /// Then: <c>busy% = (1 − avg(idle_rate)) × 100</c>.
+    ///
     /// Returns 0 when the window contains fewer than 2 samples.
     /// </summary>
     private double ComputeCpuPercent()
@@ -173,27 +177,30 @@ public sealed class SystemMetricsService : BackgroundService
         var oldest = _cpuWindow.Peek();
         var newest = _cpuWindow.Last();
 
-        double totalDelta = 0;
-        double idleDelta = 0;
+        double elapsedSeconds = (newest.Timestamp - oldest.Timestamp).TotalSeconds;
+        if (elapsedSeconds <= 0) return 0.0;
 
-        foreach (var (cpu, modes) in newest)
+        // Per-core idle rate (seconds of idle per wall-clock second), then average
+        int coreCount = 0;
+        double sumIdleRates = 0;
+
+        foreach (var (cpu, newestModes) in newest.CpuSeconds)
         {
-            if (!oldest.TryGetValue(cpu, out var oldModes))
+            if (!oldest.CpuSeconds.TryGetValue(cpu, out var oldestModes))
                 continue;
 
-            foreach (var (mode, value) in modes)
-            {
-                double prev = oldModes.GetValueOrDefault(mode, 0);
-                double delta = value - prev;
-                totalDelta += delta;
-                if (mode == "idle")
-                    idleDelta += delta;
-            }
+            double oldIdle = oldestModes.GetValueOrDefault("idle", 0);
+            double newIdle = newestModes.GetValueOrDefault("idle", 0);
+            double idleRate = (newIdle - oldIdle) / elapsedSeconds;
+
+            sumIdleRates += idleRate;
+            coreCount++;
         }
 
-        if (totalDelta <= 0) return 0.0;
+        if (coreCount == 0) return 0.0;
 
-        return (1.0 - idleDelta / totalDelta) * 100.0;
+        double avgIdleRate = sumIdleRates / coreCount;
+        return (1.0 - avgIdleRate) * 100.0;
     }
 
     // ── Prometheus text format parser (lightweight, no library needed) ─────
@@ -299,6 +306,12 @@ internal sealed record SystemMetricsSnapshot(
     long   MemoryTotalBytes,
     long   MemoryAvailableBytes,
     DateTimeOffset Timestamp
+);
+
+/// <summary>A timestamped snapshot of CPU counters from node_exporter.</summary>
+internal sealed record CpuSample(
+    DateTimeOffset Timestamp,
+    Dictionary<string, Dictionary<string, double>> CpuSeconds
 );
 
 /// <summary>Parsed result from a single node_exporter /metrics scrape.</summary>

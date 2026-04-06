@@ -8,16 +8,25 @@ namespace Monitoring.Api.Tests.Services;
 public sealed class SystemMetricsServiceTests
 {
     // ── Sample node_exporter responses ──────────────────────────────────────
+    //
+    // The two samples are ~5 seconds apart (one poll interval).
+    // Per core, counter deltas must be realistic relative to wall-clock:
+    //   total delta per core ≈ elapsed seconds (≈ 5).
+    //
+    // Sample 1 → Sample 2 per core:
+    //   cpu0: idle +4.5, system +0.25, user +0.25 → idle_rate ≈ 0.90 → 10% busy
+    //   cpu1: idle +4.5, system +0.25, user +0.25 → idle_rate ≈ 0.90 → 10% busy
+    //   avg busy ≈ 10%
 
     private const string SampleMetrics1 = """
         # HELP node_cpu_seconds_total Seconds the CPUs spent in each mode.
         # TYPE node_cpu_seconds_total counter
-        node_cpu_seconds_total{cpu="0",mode="idle"} 5000.0
-        node_cpu_seconds_total{cpu="0",mode="system"} 300.0
-        node_cpu_seconds_total{cpu="0",mode="user"} 700.0
-        node_cpu_seconds_total{cpu="1",mode="idle"} 4800.0
-        node_cpu_seconds_total{cpu="1",mode="system"} 400.0
-        node_cpu_seconds_total{cpu="1",mode="user"} 800.0
+        node_cpu_seconds_total{cpu="0",mode="idle"} 5000.00
+        node_cpu_seconds_total{cpu="0",mode="system"} 300.00
+        node_cpu_seconds_total{cpu="0",mode="user"} 700.00
+        node_cpu_seconds_total{cpu="1",mode="idle"} 4800.00
+        node_cpu_seconds_total{cpu="1",mode="system"} 400.00
+        node_cpu_seconds_total{cpu="1",mode="user"} 800.00
         # HELP node_memory_MemTotal_bytes Memory information field MemTotal_bytes.
         # TYPE node_memory_MemTotal_bytes gauge
         node_memory_MemTotal_bytes 1.7179869184e+10
@@ -26,16 +35,16 @@ public sealed class SystemMetricsServiceTests
         node_memory_MemAvailable_bytes 8.589934592e+09
         """;
 
-    // Second sample — idle increased by 90/100 per core ⇒ 10% CPU usage
+    // Second sample — idle increased by 4.5 out of 5.0 wall-clock seconds ⇒ ~10% busy
     private const string SampleMetrics2 = """
         # HELP node_cpu_seconds_total Seconds the CPUs spent in each mode.
         # TYPE node_cpu_seconds_total counter
-        node_cpu_seconds_total{cpu="0",mode="idle"} 5090.0
-        node_cpu_seconds_total{cpu="0",mode="system"} 305.0
-        node_cpu_seconds_total{cpu="0",mode="user"} 705.0
-        node_cpu_seconds_total{cpu="1",mode="idle"} 4890.0
-        node_cpu_seconds_total{cpu="1",mode="system"} 405.0
-        node_cpu_seconds_total{cpu="1",mode="user"} 805.0
+        node_cpu_seconds_total{cpu="0",mode="idle"} 5004.50
+        node_cpu_seconds_total{cpu="0",mode="system"} 300.25
+        node_cpu_seconds_total{cpu="0",mode="user"} 700.25
+        node_cpu_seconds_total{cpu="1",mode="idle"} 4804.50
+        node_cpu_seconds_total{cpu="1",mode="system"} 400.25
+        node_cpu_seconds_total{cpu="1",mode="user"} 800.25
         # HELP node_memory_MemTotal_bytes Memory information field MemTotal_bytes.
         # TYPE node_memory_MemTotal_bytes gauge
         node_memory_MemTotal_bytes 1.7179869184e+10
@@ -154,8 +163,9 @@ public sealed class SystemMetricsServiceTests
         await service.StopAsync(CancellationToken.None);
 
         Assert.NotNull(snapshot);
-        // Each core: idle increased by 90 out of 100 total ⇒ 10% busy
-        Assert.Equal(10.0, snapshot.CpuPercent, precision: 1);
+        // Each core: idle increased by 4.5 out of ~5 wall-clock seconds ⇒ ~10% busy.
+        // Tolerance is generous because wall-clock elapsed depends on Task.Delay timing.
+        Assert.InRange(snapshot.CpuPercent, 5.0, 15.0);
         Assert.Contains("cores", snapshot.Cpu);
     }
 
@@ -191,8 +201,8 @@ public sealed class SystemMetricsServiceTests
         Assert.Equal(2, data.CpuSeconds.Count);
         Assert.True(data.CpuSeconds.ContainsKey("0"));
         Assert.True(data.CpuSeconds.ContainsKey("1"));
-        Assert.Equal(5000.0, data.CpuSeconds["0"]["idle"]);
-        Assert.Equal(300.0, data.CpuSeconds["0"]["system"]);
+        Assert.Equal(5000.00, data.CpuSeconds["0"]["idle"]);
+        Assert.Equal(300.00, data.CpuSeconds["0"]["system"]);
     }
 
     [Fact]
