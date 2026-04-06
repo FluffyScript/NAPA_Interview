@@ -1,7 +1,12 @@
-A .NET 10 Minimal API that monitors a PostgreSQL database and exposes metrics for Prometheus to scrape. 
-Built as a proof of concept for a NAPA interview.
+# Monitoring API — POC
 
-Architecture
+A .NET 10 Minimal API that monitors a PostgreSQL database and exposes metrics for Prometheus to scrape. Built as a proof of concept for a NAPA interview.
+
+---
+
+## Architecture
+
+```
 ┌─────────────┐     JSON      ┌──────────────┐
 │   Frontend  │ ◄──────────── │  .NET API    │
 └─────────────┘               │  :8080       │
@@ -15,20 +20,26 @@ Architecture
 │   Grafana   │               │  PostgreSQL  │
 │  :3000      │               │  :5432       │
 └─────────────┘               └──────────────┘
-Separation of concerns:
+```
 
-/api/monitoring/... → structured JSON for the frontend
-/metrics → Prometheus scrape endpoint only, never for the frontend
-PostgreSQL stats are queried directly via pg_stat_activity, pg_stat_statements, pg_stat_user_tables
-Stack
-Concern	Choice
-Framework	ASP.NET Core Minimal API (.NET 10)
-Prometheus metrics	prometheus-net.AspNetCore + prometheus-net.DotNetRuntime
-OpenAPI spec	Microsoft.AspNetCore.OpenApi (built-in .NET 10)
-Swagger UI	Swashbuckle.AspNetCore.SwaggerUI at /swagger
-PostgreSQL access	Npgsql + Dapper (raw SQL against pg_stat_* views)
-Error responses	RFC 7807 Problem Details (AddProblemDetails)
-Containerisation	Docker + Docker Compose
+**Separation of concerns:**
+- `/api/monitoring/...` → structured JSON for the frontend
+- `/metrics` → Prometheus scrape endpoint only, never for the frontend
+- PostgreSQL stats are queried directly via `pg_stat_activity`, `pg_stat_statements`, `pg_stat_user_tables`
+
+---
+
+## Stack
+
+| Concern | Choice |
+|---|---|
+| Framework | ASP.NET Core Minimal API (.NET 10) |
+| Prometheus metrics | `prometheus-net.AspNetCore` + `prometheus-net.DotNetRuntime` |
+| OpenAPI spec | `Microsoft.AspNetCore.OpenApi` (built-in .NET 10) |
+| Swagger UI | `Swashbuckle.AspNetCore.SwaggerUI` at `/swagger` |
+| PostgreSQL access | `Npgsql` + `Dapper` (raw SQL against `pg_stat_*` views) |
+| Error responses | RFC 7807 Problem Details (`AddProblemDetails`) |
+| Containerisation | Docker + Docker Compose |
 
 # Monitoring API
 
