@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose:*)",
+      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" new xunit -n Monitoring.Api.Tests --framework net10.0)",
+      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" sln add Monitoring.Api.Tests/Monitoring.Api.Tests.csproj)",
+      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" restore)",
+      "Bash(rm -f UnitTest1.cs)",
+      "Bash(mkdir -p Helpers Repositories Services Routes)",
+      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" build Monitoring.Api.Tests/Monitoring.Api.Tests.csproj)",
+      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" test Monitoring.Api.Tests/Monitoring.Api.Tests.csproj --verbosity normal)",
+      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" test Monitoring.Api.Tests/Monitoring.Api.Tests.csproj --verbosity minimal)",
+      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" build Monitoring.Api/Monitoring.Api.csproj)"
+    ]
+  }
+}

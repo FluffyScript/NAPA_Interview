@@ -116,13 +116,13 @@ docker compose down -v
 ### Mode A — appsettings.json (already configured, no changes needed)
 
 ```
-Host=localhost;Port=5432;Database=NAPA_Interview;Username=interview_user;Password=ihnte$*(&)%Yhjn9y53
+Host=localhost;Port=5432;Database=NAPA_Interview;Username=interview_user;Password=asimplePASSWORDwith57692
 ```
 
 ### Mode B — injected by docker-compose.yml via environment variable
 
 ```
-Host=postgres;Port=5432;Database=NAPA_Interview;Username=interview_user;Password=ihnte$*(&)%Yhjn9y53
+Host=postgres;Port=5432;Database=NAPA_Interview;Username=interview_user;Password=asimplePASSWORDwith57692
 ```
 
 The only difference is `Host=localhost` (Mode A) vs `Host=postgres` (Mode B).  
@@ -143,14 +143,14 @@ $env:ConnectionStrings__Postgres = "Host=localhost;Port=5432;Database=NAPA_Inter
 
 ## Password note
 
-The database password (`ihnte$*(&)%Yhjn9y53`) contains a `$` character.
+The database password (`asimplePASSWORDwith57692`) contains a `$` character.
 
 | Context | How to write it |
 |---|---|
-| `appsettings.json` | `ihnte$*(&)%Yhjn9y53` — literal, no escaping needed |
+| `appsettings.json` | `asimplePASSWORDwith57692` — literal, no escaping needed |
 | `docker-compose.yml` | `ihnte$$*(&)%Yhjn9y53` — `$$` is Docker Compose's escape for a literal `$` |
 | PowerShell env var | `` ihnte`$*(&)%Yhjn9y53 `` — backtick escapes `$` in PowerShell |
-| cmd.exe env var | `ihnte$*(&)%Yhjn9y53` — no escaping needed in cmd |
+| cmd.exe env var | `asimplePASSWORDwith57692` — no escaping needed in cmd |
 
 ---
 

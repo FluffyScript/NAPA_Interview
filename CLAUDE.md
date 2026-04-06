@@ -60,8 +60,13 @@ Monitoring.Api/
   Dockerfile
 prometheus/prometheus.yml
 postgres/init.sql
+grafana/
+  provisioning/datasources/prometheus.yml — auto-configures Prometheus data source
+  provisioning/dashboards/default.yml     — tells Grafana where to find JSON dashboards
+  dashboards/monitoring-api.json          — pre-built Monitoring API dashboard
 docker-compose.yml
 docker-compose.db-only.yml
+Monitoring.Api.Tests/                      — xUnit test project
 ```
 
 ---
@@ -167,6 +172,39 @@ Thresholds and intervals come from `appsettings.json` under the `Monitoring:` se
 - `Services/PostgresMonitoringCollector.cs` — background path
 
 **After any change to the repository, always verify both files compile and behave correctly.** A method rename won't fail silently here (the compiler catches it), but a behavioural change (e.g. different filtering, different return shape) can break the collector without a build error.
+
+---
+
+## Unit tests
+
+```bash
+# Run all tests
+"C:\Program Files\dotnet\dotnet.exe" test Monitoring.Api.Tests/Monitoring.Api.Tests.csproj
+```
+
+Tests live in `Monitoring.Api.Tests/` and use **xUnit** + **EF Core InMemory** provider.
+
+| Test class | What it covers |
+|---|---|
+| `Repositories/PostgresRepositoryTests` | All repository methods — filtering, ordering, Take(50) limits, DTO mapping, defaults |
+| `Services/PostgresMonitoringCollectorTests` | DI wiring, scoped resolution, graceful cancellation, config binding |
+| `Services/SystemMetricsServiceTests` | Snapshot lifecycle, metric formatting, graceful shutdown |
+| `Models/MonitoringModelsTests` | DTO construction, value equality, nullable fields |
+| `Data/Entities/EntityTests` | Entity defaults, property setters, nullability |
+| `ConstantsTests` | Guards against accidental metric name / route path / config key changes |
+
+### 11. Always update tests when changing code
+
+**After any code change, run the test suite and update tests to match.** Specifically:
+
+- **Repository changes** → update `PostgresRepositoryTests` (filtering, ordering, new methods)
+- **New or renamed routes** → update `MonitoringRoutes` tests if present, verify `ConstantsTests`
+- **DTO shape changes** → update `MonitoringModelsTests` and any repository tests that assert on DTO properties
+- **New constants / metric names** → add corresponding assertions in `ConstantsTests`
+- **Entity changes** → update `EntityTests` (defaults, new properties)
+- **Collector / service changes** → update the corresponding service test class
+
+Never skip tests. If a test fails after a code change, fix the test to match the new intended behaviour — do not delete it.
 
 ---
 

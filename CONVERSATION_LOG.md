@@ -1,5 +1,8 @@
 # Conversation Log
 
+This is a resume of the conversation with Claude while the solution was being developed.
+It's purpose is context: to offer better insight in how Claude was used for development.
+
 Session date: 2026-04-02
 Model: Claude Sonnet 4.6 (claude-sonnet-4-6)
 Project: NAPA interview — .NET 10 PostgreSQL Monitoring API POC
@@ -195,7 +198,7 @@ Content-Type: application/problem+json
 
 **What was done:**
 - Added `docker-compose.db-only.yml` — spins up only the Postgres container (without the API), so the API can still run locally under `dotnet run`.
-- Updated `docker-compose.yml` to inject the real credentials from `appsettings.json` into the container via environment variables. The `$` in the password (`ihnte$*(&)%Yhjn9y53`) must be written as `$$` in YAML to produce a literal `$` inside the container.
+- Updated `docker-compose.yml` to inject the real credentials from `appsettings.json` into the container via environment variables. The `$` in the password (`asimplePASSWORDwith57692`) must be written as `$$` in YAML to produce a literal `$` inside the container.
 - `postgres/init.sql` already creates the `interview_user` role, `NAPA_Interview` database, and enables `pg_stat_statements`.
 - Created `startme.md` explaining two modes:
   - **Mode A (local API + Docker DB):** `docker compose -f docker-compose.db-only.yml up -d` → `dotnet run`
