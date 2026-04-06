@@ -15,15 +15,18 @@ A .NET 10 Minimal API that monitors a PostgreSQL database and exposes metrics fo
 │ Prometheus  │ ◄──────────── │  /metrics    │
 │  :9090      │               └──────┬───────┘
 └──────┬──────┘                      │ pg_stat_*
-       │                             ▼
-┌──────▼──────┐               ┌──────────────┐
-│   Grafana   │               │  PostgreSQL  │
-│  :3000      │               │  :5432       │
-└─────────────┘               └──────────────┘
+       │                    ┌────────┤
+┌──────▼──────┐             │        ▼
+│   Grafana   │    ┌────────▼─────┐ ┌──────────────┐
+│  :3000      │    │ node_exporter│ │  PostgreSQL  │
+└─────────────┘    │  :9100       │ │  :5432       │
+                   └──────────────┘ └──────────────┘
+                    (shares PID/net namespace)
 ```
 
 **Separation of concerns:**
 - `/api/monitoring/...` → structured JSON for the frontend
+- `/api/monitoring/system` → database host CPU/memory from node_exporter
 - `/metrics` → Prometheus scrape endpoint only, never for the frontend
 - PostgreSQL stats are queried via EF Core keyless entities mapped to `pg_stat_activity`, `pg_stat_statements`, and `pg_stat_user_tables`
 
@@ -40,62 +43,23 @@ A .NET 10 Minimal API that monitors a PostgreSQL database and exposes metrics fo
 | OpenAPI spec | `Microsoft.AspNetCore.OpenApi` (built-in .NET 10) |
 | Swagger UI | `Swashbuckle.AspNetCore.SwaggerUI` at `/swagger` |
 | Error responses | RFC 7807 Problem Details (`AddProblemDetails`) |
+| DB host metrics | `node_exporter` — CPU/memory from the PostgreSQL host |
 | Containerisation | Docker + Docker Compose |
 
 ---
 
 ## Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- PostgreSQL (local install or via Docker)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (only if running with Docker)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) — required for all run options
+- [.NET 10 SDK](https://dotnet.microsoft.com/download) — only needed for building/testing locally
+
+> **Why Docker?** The `/api/monitoring/system` endpoint fetches CPU and memory metrics from a `node_exporter` instance running alongside PostgreSQL. Prometheus and Grafana also run as containers. Running outside Docker means no system metrics, no dashboards, and no metric scraping — so **Docker Compose is the recommended (and only complete) way to run the solution.**
 
 ---
 
-## Option 1 — Visual Studio
+## Option 1 — Docker Compose (full stack, recommended)
 
-1. Open `Monitoring.sln` in Visual Studio.
-2. Make sure `Monitoring.Api` is set as the startup project.
-3. Update the connection string in `Monitoring.Api/appsettings.json` if needed:
-   ```json
-   "ConnectionStrings": {
-     "Postgres": "Host=localhost;Port=5432;Database=NAPA_Interview;Username=interview_user;Password=yourpassword"
-   }
-   ```
-4. Press **F5** (or Ctrl+F5 to run without the debugger).
-
-The app will open at the URLs defined in `Properties/launchSettings.json`:
-
-| URL | Purpose |
-|---|---|
-| `http://localhost:64965/swagger` | Swagger UI |
-| `http://localhost:64965/metrics` | Prometheus scrape endpoint |
-| `http://localhost:64965/api/monitoring/overview` | JSON health snapshot |
-
----
-
-## Option 2 — .NET CLI
-
-> **Note:** On this machine `dotnet` is not on PATH. Use the full path: `"C:\Program Files\dotnet\dotnet.exe"`.
-
-```bash
-# Restore and build
-"C:\Program Files\dotnet\dotnet.exe" build Monitoring.Api/Monitoring.Api.csproj
-
-# Run
-"C:\Program Files\dotnet\dotnet.exe" run --project Monitoring.Api/Monitoring.Api.csproj
-
-# Run tests
-"C:\Program Files\dotnet\dotnet.exe" test Monitoring.Api.Tests/Monitoring.Api.Tests.csproj
-```
-
-Same URLs as the Visual Studio option above.
-
----
-
-## Option 3 — Docker Compose (full stack)
-
-This starts the API, PostgreSQL, Prometheus, and Grafana together. No local PostgreSQL install required.
+This starts the API, PostgreSQL, node_exporter, Prometheus, and Grafana together. No local installs required beyond Docker.
 
 ```bash
 docker compose up --build
@@ -114,7 +78,7 @@ docker compose down
 | Long-Running | `http://localhost:8080/api/monitoring/long-running` | Queries > 30s |
 | Blocked | `http://localhost:8080/api/monitoring/blocked` | Lock-blocked sessions |
 | Dead Tuples | `http://localhost:8080/api/monitoring/dead-tuples` | Tables needing VACUUM |
-| System Metrics | `http://localhost:8080/api/monitoring/system` | CPU and memory stats |
+| System Metrics | `http://localhost:8080/api/monitoring/system` | DB host CPU and memory (via node_exporter) |
 | Prometheus | `http://localhost:9090` | Query metrics directly |
 | Grafana | `http://localhost:3000` | Login: **admin / admin** |
 | Prometheus Scrape | `http://localhost:8080/metrics` | Raw metrics for Prometheus |
@@ -126,20 +90,20 @@ The API waits for PostgreSQL to be healthy before starting.
 
 A pre-built **Monitoring API** dashboard is auto-provisioned when the stack starts. It includes:
 
-- **Top row** — stat panels for long-running queries, blocked sessions, active sessions, slow queries, CPU %, and memory
+- **Top row** — stat panels for long-running queries, blocked sessions, active sessions, slow queries, DB host CPU %, and DB host memory used
 - **PostgreSQL sessions** — time-series of active, long-running, blocked, and slow queries
-- **Process CPU & memory** — dual-axis chart (CPU % left, memory bytes right)
+- **DB host CPU & memory** — dual-axis chart (CPU % left, memory used right) sourced from node_exporter
 - **Dead tuples per table** — labeled by `schema.table`
 - **Collection cycle duration** — average and p95 of the background collector
 - **HTTP request rate & latency** — per-endpoint rate and p50/p95 response time
-- **System memory** — total, available, and used RAM
+- **DB host memory** — total, available, and used RAM on the database server
 - **.NET runtime** — GC collection rate, threadpool threads, exception rate
 
 Open Grafana at `http://localhost:3000`, log in with **admin / admin**, and the dashboard will be available immediately under **Dashboards**.
 
 ---
 
-## Option 4 — AWS CloudFormation (EC2)
+## Option 2 — AWS CloudFormation (EC2)
 
 Deploys the full stack on a single EC2 instance using Docker Compose. The CloudFormation template lives in `aws/cloudformation.yml`.
 
@@ -199,12 +163,30 @@ aws cloudformation delete-stack --stack-name monitoring-api
 
 ---
 
-## Database-only Docker (for local .NET development)
+## Local development (build & test only)
 
-If you want to run the API locally (Visual Studio or CLI) but still use Docker for PostgreSQL:
+The full stack requires Docker Compose (Option 1). However, you can still build and run tests locally without Docker:
+
+> **Note:** On this machine `dotnet` is not on PATH. Use the full path: `"C:\Program Files\dotnet\dotnet.exe"`.
+
+```bash
+# Build
+"C:\Program Files\dotnet\dotnet.exe" build Monitoring.Api/Monitoring.Api.csproj
+
+# Run tests (no database or Docker required)
+"C:\Program Files\dotnet\dotnet.exe" test Monitoring.Api.Tests/Monitoring.Api.Tests.csproj
+```
+
+If you need to run the API locally against a real database (e.g. for debugging), use the database-only compose file which starts PostgreSQL and node_exporter:
 
 ```bash
 docker compose -f docker-compose.db-only.yml up -d
 ```
 
-Then run the API via Visual Studio or the .NET CLI as described above.
+Then run the API via Visual Studio (**F5**) or the CLI:
+
+```bash
+"C:\Program Files\dotnet\dotnet.exe" run --project Monitoring.Api/Monitoring.Api.csproj
+```
+
+> **Limitations when running locally:** Prometheus and Grafana are not available — there is no metric scraping or dashboards. The `/api/monitoring/system` endpoint will still work because `docker-compose.db-only.yml` includes node_exporter alongside PostgreSQL (exposed on `localhost:9100`). All other database monitoring endpoints work normally.
